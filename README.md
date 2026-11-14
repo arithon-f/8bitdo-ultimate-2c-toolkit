@@ -31,6 +31,7 @@ The app installs 8BitDo's own firmware with the tweaks you choose, small edits t
 | **Settings that change at once** | Change the dead zones, the stick and trigger ranges, the vibration strength, L4 and R4, the button layout and the power-off time from the app, without installing anything again. |
 | **Fewer interruptions** | Playing only with the sticks no longer turns it off, a lost connection gets its full minute to come back, and unplugging the cable reconnects it over Bluetooth at once. |
 | **Processor rest** | Over Bluetooth, the processor rests between radio events instead of running without a pause, and a watchdog restarts the controller if it ever stops responding. |
+| **D-input through the dongle** | The controller's B + Home switch to D-input works again through the dongle, as with the dongle's first firmware, 1.00: it then presents itself as a generic gamepad, which Android handles natively, also on TVs. |
 
 The app itself also tests the controller, backs up the controller and the dongle, and restores your backup or 8BitDo's original firmware at any time.
 
@@ -62,7 +63,7 @@ The app's **Help** button explains each step and why each tweak is needed.
 2. **Install tweaks.** Choose them, use *Check First*, then *Install Tweaks…*, with the controller connected by cable. The app puts it in update mode to write and restarts it afterwards. If a Bluetooth tweak changed, remove the controller from Bluetooth settings and pair it again.
 3. **Restore** your backup, or 8BitDo's original firmware 1.09, the same way, whenever you want to go back.
 
-For the **dongle**, turn the controller off and plug the dongle in on its own. The steps are the same: back it up, switch its one tweak on or off and install, or restore. The app puts it in update mode by itself.
+For the **dongle**, turn the controller off and plug the dongle in on its own. The steps are the same: back it up, switch its tweaks on or off and install, or restore. The app puts it in update mode by itself.
 
 If something doesn't work, the [FAQ](docs/faq.md) covers the usual problems.
 

@@ -17,10 +17,13 @@
 
 Each tweak is a hash-checked set of byte edits to the original firmware 1.09; nothing else in the firmware changes, and the controller's bootloader, MAC, calibration and pairings are never written. See [SAFEGUARDS.md](../SAFEGUARDS.md) for every check the app makes.
 
-## The dongle's tweak
+## The dongle's tweaks
 
 | Tweak | Effect |
 |---|---|
 | Xbox 360 controller over 2.4 GHz | With the controller connected through it, the dongle presents as a wired Xbox 360 pad (`045e:028e`, class `ff`), which Apple's own driver takes, at up to 1,000 reports a second. Its bcdDevice becomes `0x0103` instead of `0x0114`, so the app can tell a paired dongle from the controller by cable without reading it; Apple's driver matches on vendor, product and interface class only. 9 bytes of its X-input device descriptor. |
+| D-input mode with B + Home | The dongle's first firmware, 1.00, came up as a D-input gamepad (`2dc8:301c`, one HID interface) when the controller marked its packets `0x8f`, which it does once it's set to D-input. 1.03 kept that mode, its descriptors and its reports, but always comes up as X-input. This puts the check back: the link-up handler (RAM code, image `0x6940`) calls `link_mode` (`firmware-src/dongle.s`, 60 bytes in the zeros after the image at `0xff48`) instead of `init_usb_xinput`, which goes to D-input for `0x8f` with 1.00's conditions and to X-input otherwise. Android handles the D-input gamepad natively, so it suits an Android TV without Xbox controller support. Checked by running the dongle's own code in an emulator, and tested on hardware. |
+
+The controller's own firmware 1.09 does the switching, unchanged: with the cable unplugged, hold B and Home until it turns off, then hold B while you press Home to turn it on. It then asks for D-input every time it connects over 2.4 GHz, until you turn it off with X and Home held. In D-input mode the app doesn't see the dongle while the controller is on.
 
 The app puts the dongle in update mode by itself whenever it writes; [SAFEGUARDS.md](../SAFEGUARDS.md) describes how it checks and writes the dongle. With the controller connected through the dongle, the app reads the dongle but changes nothing. The controller's own firmware can only be read by cable.
