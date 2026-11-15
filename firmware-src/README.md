@@ -27,7 +27,7 @@ Our own code for the controller (Telink TC32, firmware 1.09) and the dongle (fir
 | `resthook.bin` | `0xa484` | the main loop's call, redirected from `main_poll` to `rest_main_poll`; takes over the ring's `pollhook.bin` when installed |
 | `stall.bin` | image `0x848c`, run address `0x248c` (dead RAM code: an unused `memcmp`) | `stall_hook`: the Bluetooth branch's `motor_set(0, 0, 0)`, then, on battery with no hold running, the CPU stops for 1 ms or until the radio wakes it (`0x80` to `0x80006f`, wake mask `0x800078`, timer0) |
 | `hstall.bin` | `0xa4ae` | the Bluetooth branch's call, redirected from `0xfa68` to `stall_hook` |
-| `dinput.bin` | the dongle (firmware 1.03), `0xff48` (zeros after the image) | `link_mode` (`dongle.s`): at link-up, D-input for the controller's `0x8f` packets as in the dongle's 1.00, X-input otherwise. Built by `dongle.py` with clang, not tc32 |
+| `dinput.bin` | the dongle (firmware 1.03), `0xff48` (zeros after the image) | `link_mode` (`dongle.s`): at link-up, D-input for the controller's `0x8f` packets as in the dongle's 1.00, X-input otherwise. Linked on its own by `build.sh`, with 1.03's addresses |
 | `ring02.bin`, `ringhook02.bin`, `rumble02.bin` | not installed | 0.2.0's versions, kept to recognise firmware it installed |
 | `ringtail03.bin`, `ringhook03.bin`, `vhooka03.bin`, `vhookb03.bin`, `pollhook03.bin`, `rumble03.bin` | not installed | 0.3.0's versions, kept to recognise firmware it installed |
 
@@ -44,9 +44,6 @@ PYTHONPATH=. python3 tools/make_constants.py ultimate-2c-controller-v1.09.dat   
 ```
 
 The linker's warning that `.rumble` overlaps a previous section is expected: `noop.bin` and `rumble.bin` are alternatives.
-
-The dongle's `dinput.bin` needs only clang, which assembles `dongle.s` as ARM Thumb-1; `dongle.py` then maps each
-instruction's top nibble to TC32's. `build.sh` runs it, or on its own: `python3 firmware-src/dongle.py`.
 
 ## Test
 
