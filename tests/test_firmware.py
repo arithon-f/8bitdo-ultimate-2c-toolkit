@@ -318,6 +318,18 @@ class FromEarlierVersionsTest(unittest.TestCase):
         self.assertEqual(img[0xA0DE - image.BASE:0xA0E6 - image.BASE], bytes.fromhex("0aa00aa100a2c8a3"))  # min 10, max 10, latency 0, timeout 200
         self.assertEqual(recipes.identify(img, **self.k).recipes, ("ble_interval",))
 
+    def test_ble_fast_asks_for_7_5_ms_in_place_of_the_12_5_ms_request(self):
+        img = recipes.build(self.stock, ["ble_interval", "ble_fast"], **self.k)
+        self.assertEqual(img[0xA0DE - image.BASE:0xA0E6 - image.BASE], bytes.fromhex("06a006a100a2c8a3"))  # min 6, max 6, latency 0, timeout 200
+        self.assertEqual(recipes.identify(img, **self.k).recipes, ("ble_fast", "ble_interval"))
+        with self.assertRaises(RecipeError) as e:
+            recipes.build(self.stock, ["ble_fast"], **self.k)
+        self.assertIn("ble_interval", str(e.exception))   # it replaces the request every install makes
+
+    def test_the_app_offers_faster_bluetooth_off_by_default(self):
+        html = (Path(recipes.__file__).parents[1] / "web" / "static" / "index.html").read_text()
+        self.assertIn('value="ble_fast">', html)
+
     def test_fast_scan_halves_the_scan_period_and_keeps_home_and_turbo_timings(self):
         img = recipes.build(self.stock, ["fast_scan"], **self.k)
         at = lambda a, n: img[a - image.BASE:a - image.BASE + n]

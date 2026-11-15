@@ -152,13 +152,16 @@ def _make() -> dict[str, Recipe]:
             Edit(REST_FLAG, b"\1"),
         ), requires_group="ring"),
         Recipe("ble_interval", "Bluetooth connection request of 12.5 ms", (), (
-            Edit(0xA0DE, bytes.fromhex("0aa00aa100a2c8a3")),     # min = max 12.5 ms, latency 0, timeout 2 s, instead of 7.5 ms and latency 59
+            Edit(0xA0DE, bytes.fromhex("0aa00aa100a2c8a3"), superseded_by="ble_fast"),  # min = max 12.5 ms, latency 0, timeout 2 s, instead of 7.5 ms and latency 59
         )),
         Recipe("fast_scan", "Faster button reading", (), (
             Edit(0xD288, (40000).to_bytes(4, "little")),         # the scan period, in 16 MHz ticks: 2.5 ms instead of 5
             Edit(0xC8E2, bytes.fromhex("13aa")),                 # Home still needs 50 ms held: 20 scans
             Edit(0xC8E6, bytes.fromhex("14a2")),
             Edit(0xC640, bytes.fromhex("0bae")),                 # turbo still switches every 30 ms: 12 scans
+        )),
+        Recipe("ble_fast", "Faster Bluetooth input", ("ble_interval",), (
+            Edit(0xA0DE, bytes.fromhex("06a006a100a2c8a3")),     # min = max 7.5 ms, the shortest Bluetooth allows; latency 0, timeout 2 s
         )),
     )}
 
