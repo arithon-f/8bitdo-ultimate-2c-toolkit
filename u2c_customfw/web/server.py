@@ -317,7 +317,9 @@ def make_server(store: Path, port: int = 0):
                                                                    "firmware": dongle.describe(pick[1])},
                                        "stock_ok": fw.known or pick is not None,
                                        "known": fw.known, "version": fw.version,
-                                       "tweaks": [{"key": k, "title": title, "on": k in fw.tweaks} for k, (title, _) in dongle.TWEAKS.items()]}))
+                                       "tweaks": [{"key": k, "title": title, "on": k in fw.tweaks} for k, (title, _) in dongle.TWEAKS.items()],
+                                       "names": {k: {"label": n.label, "default": n.default, "max": n.max_len, "held": fw.names.get(k)}
+                                                 for k, n in dongle.NAMES.items()}}))
 
         def api_events(self):
             if not self.auth():
@@ -369,7 +371,7 @@ def make_server(store: Path, port: int = 0):
                       "/api/patch": ("patch", dict(tweaks=",".join(req.get("tweaks", [])), download=req.get("base") == "download",
                                                     write=bool(req.get("write")),
                                                     **{arg: n[key] for n in [req.get("names") if isinstance(req.get("names"), dict) else {}]
-                                                       for key, arg in (("bt_xbox", "bt_name"), ("cable_360", "cable_name"))
+                                                       for key, arg in (("bt_xbox", "bt_name"), ("cable_360", "cable_name"), ("dongle_360", "xinput_name"), ("dongle_dinput", "dinput_name"))
                                                        if isinstance(n.get(key), str)})),
                       "/api/restore": ("restore", dict(source=req.get("source", "backup"), write=bool(req.get("write")),
                                                         expect=req.get("backup") if isinstance(req.get("backup"), str) else None,

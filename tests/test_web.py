@@ -189,19 +189,22 @@ class WebTest(unittest.TestCase):
 
         def fake(args, store):
             seen.update(tweaks=args.tweaks, write=args.write, download=args.download, source=args.source,
-                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None), names=(args.bt_name, args.cable_name))
+                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None), names=(args.bt_name, args.cable_name, args.xinput_name, args.dinput_name))
         state.accept(self.store)
         jobs.ACTIONS["patch"] = fake
         jobs.ACTIONS["restore"] = fake
         self.assertEqual(self.call("POST", "/api/patch", {"tweaks": ["bt_xbox", "cable_360"], "base": "download", "write": True})[0], 202)
         self.events()
-        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None, names=(None, None)))
+        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None, names=(None, None, None, None)))
         self.call("POST", "/api/patch", {"tweaks": ["bt_xbox", "cable_360"], "names": {"bt_xbox": "My Pad", "cable_360": "Wired", "dim_leds": "x"}})
         self.events()
-        self.assertEqual(seen["names"], ("My Pad", "Wired"))   # only the two names there are
+        self.assertEqual(seen["names"], ("My Pad", "Wired", None, None))   # only the two names there are
         self.call("POST", "/api/patch", {"tweaks": ["bt_xbox"], "names": {"bt_xbox": ["not", "text"]}})
         self.events()
-        self.assertEqual(seen["names"], (None, None))
+        self.assertEqual(seen["names"], (None, None, None, None))
+        self.call("POST", "/api/patch", {"tweaks": ["dongle_360", "dongle_dinput"], "names": {"dongle_360": "X", "dongle_dinput": "D", "bt_xbox": "B"}})
+        self.events()
+        self.assertEqual(seen["names"], ("B", None, "X", "D"))   # passed on; the dongle's install uses only its own
         self.assertEqual(self.call("POST", "/api/restore", {"source": "stock", "write": False})[0], 202)
         self.events()
         self.assertEqual((seen["source"], seen["write"], seen["force_unknown"]), ("stock", False, False))
@@ -485,7 +488,10 @@ class WebTest(unittest.TestCase):
         self.assertEqual(data, {"device": "dongle", "paired": False, "boot": False, "backed": False, "restore_backup": None, "stock_ok": True,
                                 "known": True, "version": 1.03,
                                 "tweaks": [{"key": "dongle_360", "title": "Xbox 360 controller over 2.4 GHz", "on": True},
-                                           {"key": "dongle_dinput", "title": "D-input mode with B + Home", "on": False}]})
+                                           {"key": "dongle_dinput", "title": "D-input mode with B + Home", "on": False}],
+                                "names": {"dongle_360": {"label": "X-input name", "default": "8BitDo Ultimate 2C (Xbox 360)", "max": 38,
+                                                         "held": "8BitDo Ultimate 2C Wireless Controller"},   # installed before names
+                                          "dongle_dinput": {"label": "D-input name", "default": "8BitDo Ultimate 2C (D-input)", "max": 36, "held": None}}})
 
     def test_a_dongle_left_in_update_mode_is_named_and_its_backup_offered(self):
         from tests.test_dongle import STOCK, K as DK, flash, World
