@@ -189,13 +189,19 @@ class WebTest(unittest.TestCase):
 
         def fake(args, store):
             seen.update(tweaks=args.tweaks, write=args.write, download=args.download, source=args.source,
-                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None))
+                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None), names=(args.bt_name, args.cable_name))
         state.accept(self.store)
         jobs.ACTIONS["patch"] = fake
         jobs.ACTIONS["restore"] = fake
         self.assertEqual(self.call("POST", "/api/patch", {"tweaks": ["bt_xbox", "cable_360"], "base": "download", "write": True})[0], 202)
         self.events()
-        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None))
+        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None, names=(None, None)))
+        self.call("POST", "/api/patch", {"tweaks": ["bt_xbox", "cable_360"], "names": {"bt_xbox": "My Pad", "cable_360": "Wired", "dim_leds": "x"}})
+        self.events()
+        self.assertEqual(seen["names"], ("My Pad", "Wired"))   # only the two names there are
+        self.call("POST", "/api/patch", {"tweaks": ["bt_xbox"], "names": {"bt_xbox": ["not", "text"]}})
+        self.events()
+        self.assertEqual(seen["names"], (None, None))
         self.assertEqual(self.call("POST", "/api/restore", {"source": "stock", "write": False})[0], 202)
         self.events()
         self.assertEqual((seen["source"], seen["write"], seen["force_unknown"]), ("stock", False, False))
@@ -430,6 +436,8 @@ class WebTest(unittest.TestCase):
         self.assertTrue(data["known"])
         self.assertEqual(data["recipes"], ["bt_xbox", "cable_360"])
         self.assertIn("Xbox Series X|S controller over Bluetooth", " ".join(data["titles"]))
+        self.assertEqual(data["names"], {"bt_xbox": {"label": "Bluetooth name", "default": "8BitDo Ultimate 2C (X/S)", "max": 27, "held": "8BitDo Ultimate 2C (X/S)"},
+                                         "cable_360": {"label": "Name over cable", "default": "8BitDo Ultimate 2C (Wired)", "max": 38, "held": "8BitDo Ultimate 2C (Wired)"}})
         self.assertEqual((data["version"], data["version_from"]), (1.09, "update record"))
         self.assertEqual((data["pending"], data["boot_identity"]), (False, None))
         self.assertEqual([(t["key"], t["on"]) for t in data["tweaks"]],

@@ -109,6 +109,26 @@ class CliTest(unittest.TestCase):
         self.assertTrue(text.rstrip().endswith("Installed. The controller hasn't come back yet: if macOS asks whether to allow the accessory to connect, allow it. "
                                                "Otherwise unplug the controller, hold Home for about 12 seconds until it turns off, then connect it again. If you changed a Bluetooth tweak, remove the controller in System Settings → Bluetooth and pair it again."), text)
 
+    def test_patch_writes_the_names_given(self):
+        state.accept(self.tmp)
+        dev = SimBoot(self.flash)
+        code, text = run(["patch", "--tweaks", "bt_xbox,cable_360", "--bt-name", "My Pad", "--cable-name", "My Pad (USB)", "--write",
+                          "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 0, text)
+        self.assertEqual(recipes.identify(bytes(dev.f[0x6000:0x18400]), **K).names, {"bt_xbox": "My Pad", "cable_360": "My Pad (USB)"})
+        self.assertIn("Bluetooth name: “My Pad”. Name over cable: “My Pad (USB)”.", text)
+
+    def test_a_name_needs_its_tweak_and_must_be_text(self):
+        state.accept(self.tmp)
+        dev = SimBoot(self.flash)
+        code, text = run(["patch", "--tweaks", "bt_xbox", "--cable-name", "x", "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 2)
+        self.assertIn("--cable-name needs the cable_360 tweak", text)
+        code, text = run(["patch", "--tweaks", "cable_360", "--cable-name", "x" * 39, "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 1)
+        self.assertIn("1 to 38 characters", text)
+        self.assertEqual([o for o in dev.ops if o[0] not in ("read", "identify")], [])
+
     def test_backup_says_what_it_saved_in_a_sentence(self):
         code, text = run(["backup", "--store", str(self.tmp)], [found("cable")], SimApp(self.flash))
         self.assertEqual(code, 0, text)

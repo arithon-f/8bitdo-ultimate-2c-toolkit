@@ -313,13 +313,17 @@ def cmd_patch(args, store):
         return _dongle_change(args, store, f, keys)
     keys += ["ble_interval"] if keys and "ble_interval" not in keys else []   # as the app: every install asks for 12.5 ms
     keys += ["battery_log"] if "cpu_rest" in keys and "battery_log" not in keys else []   # and keeps the battery log
+    names = {k: v for k, v in (("bt_xbox", getattr(args, "bt_name", None)), ("cable_360", getattr(args, "cable_name", None))) if v is not None}
+    for k in names:
+        if k not in keys:
+            raise Exit(2, f"--{'bt' if k == 'bt_xbox' else 'cable'}-name needs the {k} tweak. Nothing was written.")
     stock = None
 
     def plan(ch, mode):
         nonlocal stock
         b = _backup_for(args, ch, store, mode=mode)
         stock = stock or stock_for(args, b, store)   # once: a check by cable comes first, and it may download
-        return patch.plan_patch(ch, b, stock, keys, mode)
+        return patch.plan_patch(ch, b, stock, keys, mode, names)
     _plan_and_write(args, f, plan, "Add --write to install.", INSTALLED)
 
 
@@ -365,6 +369,8 @@ def main(argv=None) -> int:
     p.add_argument("--tweaks", default="", help="comma list of: " + ", ".join(shown(k for k, r in recipes.RECIPES.items() if not r.earlier_form_of))
                    + "; for the dongle: " + ", ".join(dng.TWEAKS))
     p.add_argument("--backup"); p.add_argument("--download", action="store_true", help="use 8BitDo's v1.09 from its server")
+    p.add_argument("--bt-name", help=f"the Bluetooth name, with bt_xbox (default “{recipes.RECIPES['bt_xbox'].name.default}”)")
+    p.add_argument("--cable-name", help=f"the name by cable, with cable_360 (default “{recipes.RECIPES['cable_360'].name.default}”)")
     p = sub.add_parser("restore", parents=[common])
     p.add_argument("source", choices=["backup", "stock"])
     p.add_argument("--backup", help="this backup file instead of the newest recognised one of the controller")

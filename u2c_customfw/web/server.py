@@ -291,6 +291,8 @@ def make_server(store: Path, port: int = 0):
                                        "restore_backup": pick and {"name": pick.path.name, "taken": bkp.taken(pick.path), "firmware": bkp.describe(pick.state)},
                                        "unit_backups": sorted(b.path.name for b in here),
                                        "titles": [recipes.RECIPES[k].title for k in keys],
+                                       "names": {k: {"label": r.name.label, "default": r.name.default, "max": r.name.max_len, "held": st.names.get(k)}
+                                                 for k, r in recipes.RECIPES.items() if r.name},
                                        "tweaks": [{"key": k, "title": recipes.RECIPES[k].title, "on": k in keys}
                                                   for k in shown(k for k, r in recipes.RECIPES.items() if not r.group)]
                                                  + [{"key": "ring", "title": ring[0] if ring else "Home ring: normal", "on": bool(ring)}]}))
@@ -365,7 +367,10 @@ def make_server(store: Path, port: int = 0):
                 return self.send(403, json.dumps({"error": "Accept the disclaimer first."}))
             params = {"/api/backup": ("backup", {}),
                       "/api/patch": ("patch", dict(tweaks=",".join(req.get("tweaks", [])), download=req.get("base") == "download",
-                                                    write=bool(req.get("write")))),
+                                                    write=bool(req.get("write")),
+                                                    **{arg: n[key] for n in [req.get("names") if isinstance(req.get("names"), dict) else {}]
+                                                       for key, arg in (("bt_xbox", "bt_name"), ("cable_360", "cable_name"))
+                                                       if isinstance(n.get(key), str)})),
                       "/api/restore": ("restore", dict(source=req.get("source", "backup"), write=bool(req.get("write")),
                                                         expect=req.get("backup") if isinstance(req.get("backup"), str) else None,
                                                         force_unknown=bool(req.get("force_unknown"))))}.get(route)
