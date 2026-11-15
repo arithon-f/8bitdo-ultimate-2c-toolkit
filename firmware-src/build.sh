@@ -27,6 +27,7 @@ python3 -c "import sys; open(sys.argv[2],'wb').write(bytes.fromhex(open(sys.argv
 if [ -n "${EXTRA_CFLAGS:-}" ] && [ -z "${TEST_COPY:-}" ]; then  # a test build mustn't replace what ships
 	echo "Built in $out with $EXTRA_CFLAGS. The package's blobs are unchanged." ; exit 0
 fi
+python3 longrumble.py   # Long rumble over Bluetooth, with clang rather than tc32 (longrumble.py)
 mkdir -p "$blobs"
 cp "$out"/{packer,noop,rumble,led,hook,ringtail,ringhook,vhooka,vhookb,pollhook,hgamea,hgameb,hbuzza,hbuzzb,hidle,hstickl,hstickr,hscan,hidletask,hunplug,hota,hsweep,resthook,hstall,wdog,stall,sram,report-map,dinput}.bin "$blobs/"
 (cd "$blobs" && { sha256sum *.bin > MANIFEST 2>/dev/null || shasum -a 256 *.bin > MANIFEST; })  # the *02.bin are 0.2.0's, kept to recognise its firmware

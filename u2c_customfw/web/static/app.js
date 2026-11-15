@@ -134,8 +134,10 @@ function render() {
   pre($("pre-boot"), boot, "In update mode", "Not in update mode");
 
   const xbox = tweakBoxes().find((x) => x.value === "bt_xbox"), rumble = tweakBoxes().find((x) => x.value === "bt_rumble");
+  const long = tweakBoxes().find((x) => x.value === "bt_rumble_long");
   if (!xbox.checked) rumble.checked = false;
-  tweakBoxes().forEach((x) => { x.disabled = busy || (x === rumble && !xbox.checked); x.parentElement.classList.toggle("off", x.disabled); });
+  if (!rumble.checked) long.checked = false;
+  tweakBoxes().forEach((x) => { x.disabled = busy || (x === rumble && !xbox.checked) || (x === long && !rumble.checked); x.parentElement.classList.toggle("off", x.disabled); });
   $("ctrl-tweaks").hidden = $("tweaks-opts").hidden = dongleOnly; $("dongle-tweaks").hidden = !dongleOnly;
   if (isDongleFw && fw !== dongleRead) {   // each read starts from what's installed
     dongleRead = fw; dongleBoxes().forEach((x) => (x.checked = x.defaultChecked = fw.tweaks.some((t) => t.key === x.value && t.on)));
