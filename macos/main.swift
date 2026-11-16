@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKN
     var core: Process?
     var buffer = Data()
     var coreURL: URL?   // the address the core printed, with its token
+    let coreInput = Pipe()
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -98,7 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKN
         var env = ProcessInfo.processInfo.environment
         env["PYTHONPATH"] = env["U2C_CORE_PATH"] ?? res.appendingPathComponent("app").path   // macos/preview.sh runs the repository's core
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        env["U2C_EXIT_ON_EOF"] = "1"   // the core exits once this app is gone, even if it was killed
         p.environment = env
+        p.standardInput = coreInput   // kept open while the app lives; its end closes when the app ends
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
         p.standardError = err

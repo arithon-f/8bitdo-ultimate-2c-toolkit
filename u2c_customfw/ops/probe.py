@@ -37,7 +37,7 @@ def _read(ch, mode: str, addr: int, n: int, progress=None) -> bytes:
 def _check_device(ch, mode: str, identity: int | None) -> None:
     if mode == "boot":
         if boot.kind_from(ch, identity) != "controller":
-            raise OpError("The device in update mode isn't a controller. The 2.4 GHz dongle isn't supported.")
+            raise OpError("The device in update mode isn't the controller, so nothing was written to it.")
         return
     if app.open_session(ch) is None:
         raise OpError("The controller isn't answering. Unplug it, plug it back in and try again.")
@@ -50,7 +50,7 @@ def check_not_dongle(ch) -> None:
     if head is None:   # no answer can't show it's the controller
         raise OpError("The controller isn't answering. Unplug it, plug it back in and try again.")
     if head == b"\xff" * 16:
-        raise OpError("This looks like the 2.4 GHz dongle, which this app doesn't support.")
+        raise OpError("This is the 2.4 GHz dongle with the controller connected through it. To change the dongle, turn the controller off.")
 
 
 def pending_update(ch, mode: str) -> bool:

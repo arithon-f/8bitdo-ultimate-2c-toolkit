@@ -2,6 +2,8 @@
 :root{color-scheme:dark;--caution:#e3b25a;--bg:#101215;--card:#171a1e;--card2:#1f2328;--fg:#e8eaed;--dim:#9aa1ab;--line:#2a2f36;--accent:#3fc8b4;--on-accent:#04211c;--warn:#e8695b;--on-warn:#1d0804;--warn-bg:rgba(232,105,91,.08)}
 *{box-sizing:border-box}
 html,body{height:100%}
+body{-webkit-user-select:none;user-select:none}   /* an app, not a page: only text worth copying can be selected */
+pre,code,.msg,input,textarea,#help,.rows dd{-webkit-user-select:text;user-select:text}
 body{margin:0;background:var(--bg);color:var(--fg);font:14.5px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;display:flex;flex-direction:column;overflow:hidden}
 [hidden]{display:none!important}
 pre{font:12.5px/1.45 ui-monospace,"SF Mono",Menlo,monospace}
@@ -124,7 +126,7 @@ main{flex:1;overflow:auto;padding:14px 22px}
 .dock .tog{background:none;color:var(--dim);padding:4px 8px;font-weight:500;font-size:12.5px}
 .dock pre{margin:10px 0 0;background:#07090c;border:1px solid var(--line);border-radius:8px;padding:9px 12px;height:140px;overflow:auto;white-space:pre-wrap;color:#cfd5dc}
 .dock pre .e{color:var(--warn)}
-.dock .msg{margin:6px 0 0;font-size:13.5px}
+.dock .msg{flex:1;margin:0;font-size:13.5px}   /* in the status row, where the progress bar was: a task's end doesn't grow the dock */
 
 dialog{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:16px;padding:24px;width:min(500px,calc(100% - 32px));box-shadow:0 24px 60px rgba(0,0,0,.6);max-height:92vh;overflow:auto}
 dialog::backdrop{background:rgba(0,0,0,.62)}

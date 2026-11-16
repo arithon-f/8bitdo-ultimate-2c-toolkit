@@ -25,6 +25,20 @@ class TransportTest(unittest.TestCase):
             self.assertIsInstance(d.vendor, int)
 
     @unittest.skipUnless(sys.platform == "darwin", "IOKit only on macOS")
+    def test_only_8bitdo_and_microsoft_devices_are_listed(self):
+        from u2c_customfw.transport import iokit
+        self.assertTrue(all(d.vendor in iokit.VENDORS for d in transport.list_devices()))
+        mgr = iokit.iok.IOHIDManagerCreate(None, 0)    # what macOS would list without the matching
+        iokit.iok.IOHIDManagerSetDeviceMatching(mgr, None)
+        iokit.iok.IOHIDManagerOpen(mgr, 0)
+        devs = iokit.iok.IOHIDManagerCopyDevices(mgr)
+        n = iokit.cf.CFSetGetCount(devs) if devs else 0
+        self.assertGreaterEqual(n, len(transport.list_devices()))
+        if devs:
+            iokit.cf.CFRelease(devs)
+        iokit._release_manager(mgr)
+
+    @unittest.skipUnless(sys.platform == "darwin", "IOKit only on macOS")
     def test_old_managers_are_released_only_with_no_channel_open(self):
         from u2c_customfw.transport import iokit
         released = []
@@ -50,7 +64,8 @@ class TransportTest(unittest.TestCase):
                 if name in ("CFStringCreateWithCString", "IOHIDManagerCopyDevices"):
                     def call(*args):
                         p = real(*args)
-                        owed.update([p])
+                        if p:   # NULL (no device of ours connected) owes nothing
+                            owed.update([p])
                         return p
                     return call
                 return real

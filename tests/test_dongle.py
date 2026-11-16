@@ -192,6 +192,20 @@ class DongleWriteTest(unittest.TestCase):
         self.assertIn("nothing was written", str(e.exception))
         self.assertEqual(bytes(w.flash), self.full)
 
+    def test_a_staged_update_stops_the_write_before_update_mode_and_in_it(self):
+        record = bytearray(self.full)
+        record[dongle.RECORD + 0x18:dongle.RECORD + 0x1C] = dongle.STAGED_MAGIC
+        record[dongle.RECORD + 0x20:dongle.RECORD + 0x24] = (0xA000).to_bytes(4, "little")
+        for start in ("dongle", "boot"):
+            w = World(bytes(record), start=start)
+            with self.assertRaises(OpError) as e:
+                dongle.apply(w.find, w.open, bytes(record), XBOX, lambda *a: None, wait=0.01)
+            self.assertIn("staged", str(e.exception))
+            self.assertEqual(bytes(w.flash), bytes(record))
+            self.assertEqual(w.mode, start)   # idle: it never entered update mode
+        record[dongle.RECORD + 0x20:dongle.RECORD + 0x24] = bytes(4)   # length 0, as on Carlos's dongle: nothing staged
+        self.assertFalse(dongle.staged(bytes(record[dongle.RECORD:dongle.RECORD + 0x24])))
+
     def test_the_write_never_leaves_bank_a(self):
         with self.assertRaises(AssertionError):
             dongle.apply(None, None, self.full, STOCK + b"x", lambda *a: None)
@@ -239,6 +253,18 @@ class DongleCliTest(DongleWriteTest):
             self.run_cmd(cli.cmd_patch, w, tweaks="dongle_dinputt", write=True)
         self.assertEqual(e.exception.msg, "The dongle's tweaks are dongle_360, dongle_dinput. Nothing was written.")
         self.assertEqual(bytes(w.flash[dongle.BASE:dongle.END]), BOTH)
+
+    def test_check_first_says_an_update_is_staged(self):
+        from u2c_customfw import cli
+        record = bytearray(self.full)
+        record[dongle.RECORD + 0x18:dongle.RECORD + 0x1C] = dongle.STAGED_MAGIC
+        record[dongle.RECORD + 0x20:dongle.RECORD + 0x24] = (0xA000).to_bytes(4, "little")
+        w = World(bytes(record))
+        self.run_cmd(cli.cmd_backup, w)
+        with self.assertRaises(cli.Exit) as e:
+            self.run_cmd(cli.cmd_patch, w, tweaks="dongle_360")   # without --write
+        self.assertIn("staged", e.exception.msg)
+        self.assertEqual(bytes(w.flash), bytes(record))
 
     def test_without_a_backup_nothing_is_written(self):
         from u2c_customfw import cli

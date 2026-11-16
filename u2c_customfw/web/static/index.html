@@ -128,10 +128,10 @@
   <div class="row">
     <span class="st"><i></i><span id="dock-status" aria-live="polite">Ready</span></span>
     <span class="idle" id="idle">No task running.</span>
+    <span class="msg" id="dock-message" aria-live="polite" hidden></span>
     <div class="prog" id="prog" role="progressbar" aria-label="Progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><i id="prog-bar"></i></div><span class="pc" id="pc" hidden></span>
     <button class="tog" id="log-toggle" hidden>Show Log ▴</button>
   </div>
-  <p class="msg" id="dock-message" aria-live="polite" hidden></p>
   <p class="upd" id="update" hidden>Version <span id="update-version"></span> is available. <a id="update-link" target="_blank" rel="noopener">Download it from GitHub</a>, or if you installed the app with Homebrew, run <code>brew upgrade firmware-toolkit</code>.</p>
   <pre id="log" hidden></pre>
 </footer>

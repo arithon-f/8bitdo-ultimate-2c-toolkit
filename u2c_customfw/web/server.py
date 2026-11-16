@@ -4,6 +4,9 @@ be this address (against DNS rebinding)."""
 import json
 import os
 import secrets
+import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -244,7 +247,8 @@ def make_server(store: Path, port: int = 0):
                 ch = cli.open_channel(f.info, 0 if f.mode == "boot" else 0x81)
                 try:
                     fw = probe.read_firmware(ch, f.mode)
-                    pick = bkp.restorable(cli.unit_backups(ch, store, f.mode))   # what Restore your backup would use
+                    here = cli.unit_backups(ch, store, f.mode, whole=False)   # shown only; writes check the bootloader too
+                    pick = bkp.restorable(here)   # what Restore your backup would use
                 finally:
                     ch.close()
                 st, version = fw.state, fw.version
@@ -257,6 +261,7 @@ def make_server(store: Path, port: int = 0):
             self.send(200, json.dumps({"known": st.known, "recipes": keys, "version": version, "version_from": fw.version_from,
                                        "pending": fw.pending, "boot_identity": fw.boot_identity, "outdated": st.outdated, "ring_level": fw.ring_level,
                                        "restore_backup": pick and {"name": pick.path.name, "taken": bkp.taken(pick.path), "firmware": bkp.describe(pick.state)},
+                                       "unit_backups": sorted(b.path.name for b in here),
                                        "titles": [recipes.RECIPES[k].title for k in keys],
                                        "tweaks": [{"key": k, "title": recipes.RECIPES[k].title, "on": k in keys}
                                                   for k in shown(k for k, r in recipes.RECIPES.items() if not r.group)]
@@ -340,11 +345,24 @@ def make_server(store: Path, port: int = 0):
                 return self.send(409, json.dumps({"error": "Another task is running."}))
             self.send(202, json.dumps({"started": params[0]}))
 
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler), token
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    httpd.runner = runner
+    return httpd, token
 
 
 def serve(store: Path, port: int = 0) -> None:
     httpd, token = make_server(store, port)
     page = os.environ.get("U2C_PAGE_QUERY", "") if os.environ.get("U2C_SIM") else ""   # macos/preview.sh: the page simulator, never with real devices
     print(f"U2C_URL http://127.0.0.1:{httpd.server_address[1]}/?token={token}{page}", flush=True)
+    if os.environ.get("U2C_EXIT_ON_EOF"):   # started by the Mac app, which holds our stdin open while it lives
+        threading.Thread(target=exit_when_orphaned, args=(httpd.runner,), daemon=True).start()
     httpd.serve_forever()
+
+
+def exit_when_orphaned(runner, stdin=None, wait: float = 1.0, exit=os._exit) -> None:
+    """When the app's end of stdin closes, however the app ended, exit; but a task, a write above all, runs to its end."""
+    for _ in stdin or sys.stdin:
+        pass
+    while runner.running:
+        time.sleep(wait)
+    exit(0)

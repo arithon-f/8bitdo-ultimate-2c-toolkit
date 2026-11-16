@@ -60,7 +60,7 @@ def pick(modes=CONTROLLER_MODES):
         raise Exit(2, "More than one device is connected. Unplug all but one controller.")
     if not present or present[0].mode not in modes:
         if present and present[0].mode.startswith("dongle"):
-            raise Exit(2, "That is the 2.4 GHz dongle, and this only works with the controller.")
+            raise Exit(2, "That is the 2.4 GHz dongle, and this command only works with the controller.")
         want = "by cable" if "cable" in modes else "in update mode. " + BOOT_HELP
         raise Exit(2, f"No controller found {want}")
     return present[0]
@@ -116,10 +116,13 @@ def _dongle_change(args, store, f, tweaks=(), source: str | None = None):
         unit = dng.read_unit(ch, in_boot)
         try:
             cur = boot.read(ch, dng.BASE, dng.SIZE) if in_boot else dng._read(ch, dng.BASE, dng.SIZE)
+            record = boot.read(ch, dng.RECORD, 0x24) if in_boot else dng._read(ch, dng.RECORD, 0x24)
         except protocol.ProtocolError as e:
             raise OpError(str(e)) from e
     finally:
         ch.close()
+    if dng.staged(record):   # Check First says so too, not only the write
+        raise Exit(2, dng.STAGED)
     found = dng.unit_backups(store, unit)
     if not found:
         raise Exit(2, "There's no backup of this dongle. Back it up first, with the dongle connected on its own.")
@@ -186,9 +189,11 @@ def cmd_identify(args, store):
     args.say(("original 1.09" + (f" with tweaks: {', '.join(shown(s.recipes))}" if shown(s.recipes) else "")) if s.known else "unknown firmware")
 
 
-def unit_backups(ch, store, mode="boot"):
-    """The backups of the controller on ch, in update mode or by cable, newest first."""
-    return bkp.find_backups(store, probe._read(ch, mode, 0, image.BOOT_END), probe._read(ch, mode, image.MAC_SECTOR, image.SECTOR))
+def unit_backups(ch, store, mode="boot", whole=True):
+    """The backups of the controller on ch, in update mode or by cable, newest first. whole=False matches by the address
+    sector only, which reads 4 KB instead of 28 KB: for showing them, never for writing."""
+    boot = probe._read(ch, mode, 0, image.BOOT_END) if whole else None
+    return bkp.find_backups(store, boot, probe._read(ch, mode, image.MAC_SECTOR, image.SECTOR))
 
 
 def _backup_for(args, ch, store, recognised=False, mode="boot"):
@@ -322,7 +327,9 @@ def cmd_restore(args, store):
     f = pick(("boot", "cable", "cable_360", "dongle", "dongle_paired"))
     if f.mode.startswith("dongle") or _dongle_in_boot(f):
         return _dongle_change(args, store, f, source=args.source)
-    stock = fetch.fetch_stock() if args.source == "stock" else None   # before update mode: a failed download leaves it as it was
+    stock = None
+    if args.source == "stock":   # a backup's checked copy of 1.09 first; else download, before update mode, so a failed
+        stock = bkp.find_original(None, store) or fetch.fetch_stock()   # download leaves the controller as it was
 
     def plan(ch, mode):
         b = _backup_for(args, ch, store, recognised=args.source == "backup", mode=mode)

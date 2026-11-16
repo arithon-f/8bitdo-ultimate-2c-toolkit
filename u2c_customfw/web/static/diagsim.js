@@ -37,6 +37,10 @@
       return json({ ...got, recipes, titles: all ? tweaks.filter((t) => t.on).map((t) => t.title) : ["Dimmer LEDs", "Home ring: 5 %"], tweaks, ring_level: 2, outdated: !!query.get("outdated") });
     }
     if (path.startsWith("/api/firmware") && query.get("identity") === "none") return json({ ...(await answer.json()), boot_identity: null });
+    if (path.startsWith("/api/firmware") && query.get("nobackup")) {   // none of this controller's backups either
+      const got = await answer.json();
+      return json(got.tweaks ? { ...got, unit_backups: [], restore_backup: null } : got);
+    }
     if (path.startsWith("/api/state") && (device || query.get("nobackup"))) {
       const got = await answer.json();
       return json({ ...got, ...(device ? { devices: [{ mode: device, name: "simulated" }] } : {}), ...(query.get("nobackup") ? { backups: [] } : {}) });

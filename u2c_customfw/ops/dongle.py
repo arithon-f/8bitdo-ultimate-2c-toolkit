@@ -157,6 +157,17 @@ def _wait(find, mode, seconds, step):
     return None
 
 
+STAGED_MAGIC = (0xAEB14D6C).to_bytes(4, "little")
+STAGED = ("An update is staged on this dongle, and its update-mode code would install it over the new firmware the next "
+          "time it starts. Nothing was written. Unplug the dongle and plug it back in once, then try again.")
+
+
+def staged(record: bytes) -> bool:
+    """The bootloader's own test before it applies a staged update (0xd44): the magic at +0x18 and a length of 1 to
+    0x3efff at +0x20. Writing bank A then would be undone at the next start."""
+    return record[0x18:0x1C] == STAGED_MAGIC and 1 <= int.from_bytes(record[0x20:0x24], "little") <= 0x3EFFF
+
+
 INTERRUPTED = "The dongle may stay in update mode until it's finished. Use Restore to install your backup or 8BitDo's original firmware 1.03."
 
 
@@ -173,6 +184,8 @@ def apply(find, open_channel, unit_backup: bytes, bank: bytes, progress, wait: f
         try:
             if read_unit(ch) != unit_of(unit_backup):
                 raise OpError("This dongle doesn't match the backup, so nothing was written.")
+            if staged(_read(ch, RECORD, 0x24)):
+                raise OpError(STAGED)
             ch.xfer(bytes([0x81, 0x05, 0x00, 0x51, 0x00]).ljust(64, b"\0"), 0.5)
         finally:
             ch.close()
@@ -186,6 +199,8 @@ def apply(find, open_channel, unit_backup: bytes, bank: bytes, progress, wait: f
                 raise OpError("The device in update mode isn't the dongle, so nothing was written.")
             if boot.read(ch, 0, BOOT_END) != unit_backup[:BOOT_END] or boot.read(ch, CAL, 0x40) != unit_backup[CAL:CAL + 0x40]:
                 raise OpError("The dongle in update mode doesn't match the backup, so nothing was written.")
+            if staged(boot.read(ch, RECORD, 0x24)):
+                raise OpError(STAGED)
         except protocol.ProtocolError as e:
             raise OpError(f"{e}. Nothing was written.") from e
         try:

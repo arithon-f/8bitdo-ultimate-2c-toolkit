@@ -63,6 +63,7 @@ class Tree(HTMLParser):
 
 class Server:
     def __init__(self, sim):
+        self.pages = {}
         self.store = tempfile.mkdtemp()
         state.accept(Path(self.store))
         env = dict(os.environ, U2C_SIM=sim, PYTHONPATH=str(Path(__file__).parent.parent))
@@ -71,8 +72,14 @@ class Server:
         self.url = line.split()[1]
 
     def dom(self, query="", budget=4000):
+        """The page as Chrome leaves it. A page that only loads is the same every time on one server, so it's kept;
+        those that click (scenario=, job=) always run, as they may change what the server holds."""
+        key = (query, budget)
+        if "scenario=" not in query and "job=" not in query and key in self.pages:
+            return Tree(self.pages[key]).root
         out = subprocess.run([CHROME, "--headless=new", "--disable-gpu", f"--user-data-dir={self.store}/chrome", f"--virtual-time-budget={budget}",
                               "--dump-dom", self.url + query], capture_output=True, text=True, timeout=120)
+        self.pages[key] = out.stdout
         return Tree(out.stdout).root
 
     def stop(self):

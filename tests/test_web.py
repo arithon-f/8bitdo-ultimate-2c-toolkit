@@ -98,6 +98,8 @@ class WebTest(unittest.TestCase):
         got = json.loads(self.call("GET", "/api/settings")[1])
         self.assertFalse(got["available"])
         self.assertIn("2.4 GHz dongle", got["note"])
+        got = json.loads(self.call("GET", "/api/firmware")[1])   # a stock dongle with the controller on: what to do
+        self.assertIn("turn the controller off", got["error"])
 
     def test_api_ring_refuses_in_update_mode(self):
         self.assertEqual(self.ring_call({"level": 2}, mode="boot")[0], 409)
@@ -612,3 +614,17 @@ class SimulationStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrphanTest(unittest.TestCase):
+    def test_the_core_exits_once_the_app_is_gone_but_never_during_a_task(self):
+        checks = []
+
+        class Busy:
+            @property
+            def running(self):
+                checks.append(1)
+                return len(checks) < 3   # a task that ends after two more checks
+        exited = []
+        server.exit_when_orphaned(Busy(), stdin=io.StringIO("anything\n"), wait=0, exit=exited.append)
+        self.assertEqual((len(checks), exited), (3, [0]))
