@@ -9,7 +9,7 @@ Our own code for the controller (Telink TC32, firmware 1.09) and the dongle (fir
 | `report-map.bin` | `0x18274` (zero tail after the image) | the Xbox Series X\|S HID report map (283 bytes, captured by xpadneo) |
 | `noop.bin` | `0x18390` | `noop_write`: accept output-report writes and ignore them |
 | `rumble.bin` | `0x18390` | `rumble_write`: Xbox rumble to the motor setter `0xfa68`, the Xbox duration as its hold; through `rumble_tail` when that code is there. A report with bit 7 of its first byte set is a Home ring command instead |
-| `longrumble.bin` | `0x1734c` (the stock Report Map, unused once `bt_xbox` points the attribute at `0x18274`), up to `0x173c0` | Long rumble over Bluetooth (`longrumble.s`): `long_write`, `long_hold` and `rearm`, so a rumble lasts its duration times (loop count + 1), as on an Xbox controller. Built by `longrumble.py` with clang, not tc32 |
+| `longrumble.bin` | `0x1734c` (the stock Report Map, unused once `bt_xbox` points the attribute at `0x18274`), up to `0x173c0` | Long rumble over Bluetooth (`longrumble.s`): `long_write`, `long_hold` and `rearm`, so a rumble lasts its duration times (loop count + 1), as on an Xbox controller. Linked on its own by `build.sh`, with `rumble_write`'s address, and with the three blobs below |
 | `lrhooka.bin`, `lrhookb.bin` | `0xfa72`, `0xfa88` | inside the motor setter: its masking of the hold, and its read of the hold on a zero-hold call, replaced by calls to `long_hold` and `rearm` |
 | `lrwrite.bin` | `0x17764` | the output report's write callback, `long_write` instead of `rumble_write` (Thumb-style odd) |
 | `led.bin` | image `0x7738`, run address `0x1738` | `main_tick`: LED pins to weak drive strength, then the motor routine `0xfaa0` |

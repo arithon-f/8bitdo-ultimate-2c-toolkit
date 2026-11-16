@@ -21,14 +21,19 @@ tc32-elf-ld -N -T packer.ld --no-check-sections \
 tc32-elf-as dongle.s -o "$out/dongle.o"   # the dongle (firmware 1.03): its own link, with its own addresses
 tc32-elf-ld -N -Ttext=0xff48 --defsym reenum=0xdc9c --defsym init_idle=0xddf8 --defsym init_xinput=0xde28 "$out/dongle.o" -o "$out/dongle.elf"
 tc32-elf-objcopy -O binary -j .text "$out/dongle.elf" "$out/dinput.bin"
+tc32-elf-as longrumble.s -o "$out/longrumble.o"   # Long rumble over Bluetooth: its own link, in the stock Report Map, with its hooks
+tc32-elf-ld -N -Ttext=0x1734c --section-start=.lrhooka=0xfa72 --section-start=.lrhookb=0xfa88 --section-start=.lrwrite=0x17764 \
+	--defsym rumble_write=0x18390 "$out/longrumble.o" -o "$out/longrumble.elf"
+tc32-elf-objcopy -O binary -j .text "$out/longrumble.elf" "$out/longrumble.bin"
+for s in lrhooka lrhookb lrwrite; do tc32-elf-objcopy -O binary -j ".$s" "$out/longrumble.elf" "$out/$s.bin"; done
+[ "$(wc -c < "$out/longrumble.bin")" -le 116 ] || { echo "longrumble.bin is bigger than the stock Report Map's 116 bytes" >&2; exit 1; }
 for s in packer noop rumble led hook ringtail ringhook vhooka vhookb pollhook hgamea hgameb hbuzza hbuzzb hidle hstickl hstickr hscan hidletask hunplug hota hsweep resthook hstall hmeter battlog wdog stall sram; do tc32-elf-objcopy -O binary -j ".$s" "$out/packer.elf" "$out/$s.bin"; done
 tc32-elf-objdump -d "$out/packer.elf" > "$out/packer.dis"
 python3 -c "import sys; open(sys.argv[2],'wb').write(bytes.fromhex(open(sys.argv[1]).read()))" report-map.hex "$out/report-map.bin"
 if [ -n "${EXTRA_CFLAGS:-}" ] && [ -z "${TEST_COPY:-}" ]; then  # a test build mustn't replace what ships
 	echo "Built in $out with $EXTRA_CFLAGS. The package's blobs are unchanged." ; exit 0
 fi
-python3 longrumble.py   # Long rumble over Bluetooth, with clang rather than tc32 (longrumble.py)
 mkdir -p "$blobs"
-cp "$out"/{packer,noop,rumble,led,hook,ringtail,ringhook,vhooka,vhookb,pollhook,hgamea,hgameb,hbuzza,hbuzzb,hidle,hstickl,hstickr,hscan,hidletask,hunplug,hota,hsweep,resthook,hstall,wdog,stall,sram,report-map,dinput}.bin "$blobs/"
+cp "$out"/{packer,noop,rumble,led,hook,ringtail,ringhook,vhooka,vhookb,pollhook,hgamea,hgameb,hbuzza,hbuzzb,hidle,hstickl,hstickr,hscan,hidletask,hunplug,hota,hsweep,resthook,hstall,wdog,stall,sram,report-map,dinput,longrumble,lrhooka,lrhookb,lrwrite}.bin "$blobs/"
 (cd "$blobs" && { sha256sum *.bin > MANIFEST 2>/dev/null || shasum -a 256 *.bin > MANIFEST; })  # the *02.bin are 0.2.0's, kept to recognise its firmware
 ls -l "$blobs"
