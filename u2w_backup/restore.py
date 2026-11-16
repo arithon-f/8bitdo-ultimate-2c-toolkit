@@ -4,10 +4,14 @@
 Read-only first: the latest backup, 8BitDo's 1.09 from its server (checked by SHA-256), the bootloader by cable or in
 update mode (it must match the backup), no update staged in the record at 0x31000, and identify 0x6012 in update mode.
 
-Then, sector by sector: erase 4 KB, write it in 46-byte chunks (the bootloader checks each chunk's CRC), read it back.
-Sector 0x5000, which holds the header the bootloader checks bank A against (length at 0x5018), goes last, so the header
-already in place stays valid until then. Nothing outside 0x5000-0x29000 is erased or written: BootWriter refuses it.
-If anything stops, the controller stays in update mode (the flag survives unplugging) and this can be run again.
+At start-up the bootloader (0x1e4) sums the bytes of bank A over the length at 0x5018 (0x17a44 in 1.09) and compares the
+sum with the word stored right after them (0x1ca44); if bank A fails, it checks bank B at 0x32000 and copies it back
+(0xb5c). The rest of bank A, after that word, isn't covered. So the write starts by erasing the sector that holds the
+word: from then on bank A fails the check until the very last write, which is that word. An interruption anywhere leaves
+firmware the bootloader won't run. Then every other sector: erase 4 KB, write it in 46-byte chunks (the bootloader checks
+each chunk's CRC), read it back. Sector 0x5000 holds the length the check reads, so it's skipped when it's already right
+(it always is for 1.09), and otherwise written header first. Nothing outside 0x5000-0x29000 is erased or written:
+BootWriter refuses it.
 """
 import time
 
@@ -21,11 +25,12 @@ ERASE_END = 0x29000
 SECTOR = 0x1000
 RECORD = 0x31000
 STAGED_MAGIC = (0xAEB14D6C).to_bytes(4, "little")
-ORDER = list(range(core.BASE + SECTOR, ERASE_END, SECTOR)) + [core.BASE]
+SECTORS = (ERASE_END - core.BASE) // SECTOR
 STOPPED = ("The controller's firmware is half-written, and the controller is still in update mode. Run "
-           "`python3 -m u2w_backup restore-original --write` again to finish. Until then, don't hold Home, unplug it or "
-           "run leave-update-mode: restarting with half-written firmware is the one thing to avoid. (On the Ultimate 2C "
-           "the update-mode flag survives unplugging; that hasn't been seen on this controller yet.)")
+           "`python3 -m u2w_backup restore-original --write` again to finish. Until then it's best not to restart it "
+           "(don't hold Home or run leave-update-mode). If it restarts anyway, its bootloader should find the firmware "
+           "incomplete and copy 8BitDo's 1.09 back from the second copy at 0x32000; that's read from the bootloader's "
+           "code, not yet seen happen.")
 
 
 class BootWriter(um.BootReadsOnly):
@@ -60,6 +65,30 @@ def describe(record: bytes) -> str:
         f"length {int.from_bytes(record[0x20:0x24], 'little'):#x}"
 
 
+def checked_word(payload: bytes) -> int:
+    """Where the bootloader's start-up check keeps the sum it compares with: right after the summed part, whose length is
+    at 0x5018 in the header."""
+    a = core.BASE + int.from_bytes(payload[0x18:0x1C], "little")
+    if not (core.BASE + SECTOR <= a and a + 4 <= END and a % 4 == 0):
+        raise core.Stop("8BitDo's firmware header doesn't give a check length inside the firmware, so nothing was written.")
+    return a
+
+
+def _write_commit(ch, word: int, payload: bytes, erase: bool) -> bool:
+    """The sector with the checked sum: everything but the sum's 4 bytes, then the sum, as the very last write."""
+    a = word // SECTOR * SECTOR
+    want = payload[a - core.BASE:a - core.BASE + SECTOR]
+    if erase:
+        boot.erase(ch, a, SECTOR)
+    for lo, hi in ((a, word), (word + 4, a + len(want))):
+        for c in range(lo, hi, boot.CHUNK):
+            blk = payload[c - core.BASE:min(c + boot.CHUNK, hi) - core.BASE]
+            if blk != b"\xff" * len(blk):
+                boot.write_chunk(ch, c, SIZE, blk)
+    boot.write_chunk(ch, word, SIZE, payload[word - core.BASE:word - core.BASE + 4])
+    return boot.read(ch, a, SECTOR) == (want + b"\xff" * SECTOR)[:SECTOR]
+
+
 def _write_sector(ch, a: int, payload: bytes) -> bool:
     want = payload[a - core.BASE:a - core.BASE + SECTOR]
     boot.erase(ch, a, SECTOR)
@@ -91,8 +120,10 @@ def run(devices, open_channel, folder, say, write=False, trace=None, opener=None
                 raise core.Stop("A firmware update is staged on this controller, and its bootloader would install it over "
                                 "this at the next start. Nothing was written.")
             if not write:
-                say("status", f"Check passed: it would erase and rewrite bank A ({len(ORDER)} sectors, "
-                              "0x5000-0x29000) in update mode, sector 0x5000 last. Nothing was sent but reads.")
+                word = checked_word(payload)
+                say("status", f"Check passed: it would rewrite bank A ({SECTORS} sectors, 0x5000-0x29000) in update mode, "
+                              f"erasing sector {word // SECTOR * SECTOR:#x} first and writing the start-up check's sum at "
+                              f"{word:#x} last. Nothing was sent but reads.")
                 say("done", "checked")
                 return
             say("status", "Restarting into update mode (81 05 00 51 00).")
@@ -116,17 +147,30 @@ def run(devices, open_channel, folder, say, write=False, trace=None, opener=None
                             + um.LEAVE_HELP)
         if staged(boot.read(bch, RECORD, 0x24)):
             raise core.Stop("A firmware update is staged on this controller. Nothing was written. " + um.LEAVE_HELP)
+        word = checked_word(payload)
+        commit = word // SECTOR * SECTOR
         if not write:
-            say("status", f"Check passed in update mode: it would rewrite bank A ({len(ORDER)} sectors). Nothing was written.")
+            say("status", f"Check passed in update mode: it would rewrite bank A ({SECTORS} sectors). Nothing was written.")
             say("done", "checked")
             return
-        say("status", f"Rewriting bank A one 4 KB sector at a time ({len(ORDER)} sectors), sector 0x5000 last. "
-                      "Keep the cable connected.")
+        say("status", f"Rewriting bank A one 4 KB sector at a time ({SECTORS} sectors). First, sector {commit:#x}, which "
+                      f"holds the sum the bootloader checks at start-up ({word:#x}), is erased, so an interruption leaves "
+                      "firmware it won't run; that sum is the last thing written. Keep the cable connected.")
         t0 = time.monotonic()
-        for i, a in enumerate(ORDER):
-            if not _write_sector(bch, a, payload) and not _write_sector(bch, a, payload):
+        boot.erase(bch, commit, SECTOR)
+        done = 0
+        for a in range(core.BASE, ERASE_END, SECTOR):
+            if a == commit:
+                continue
+            if a == core.BASE and boot.read(bch, a, SECTOR) == payload[:SECTOR]:
+                say("status", "Sector 0x5000, with the header the check reads, is already 8BitDo's, so it's left as it is.")
+            elif not _write_sector(bch, a, payload) and not _write_sector(bch, a, payload):
                 raise core.Stop(f"Sector {a:#x} didn't read back as written, twice. " + STOPPED)
-            say("progress", i + 1, len(ORDER))
+            done += 1
+            say("progress", done, SECTORS)
+        if not _write_commit(bch, word, payload, erase=False) and not _write_commit(bch, word, payload, erase=True):
+            raise core.Stop(f"Sector {commit:#x} didn't read back as written, twice. " + STOPPED)
+        say("progress", SECTORS, SECTORS)
         if boot.read(bch, core.BASE, SIZE) != payload:
             raise core.Stop("Bank A doesn't read back as 8BitDo's 1.09. " + STOPPED)
         say("status", f"Written and read back in {time.monotonic() - t0:.0f} s. Restarting (bootloader command 7).")

@@ -246,7 +246,9 @@ class RestoreTest(unittest.TestCase):
         from u2w_backup import restore
         self.boot, self.rs = boot, restore
         self.dir = Path(tempfile.mkdtemp())
-        self.payload = (PAYLOAD + b"\xff" * restore.SIZE)[:restore.SIZE]
+        p = bytearray((PAYLOAD + b"\xff" * restore.SIZE)[:restore.SIZE])
+        p[0x18:0x1C] = (0x17A44).to_bytes(4, "little")   # 1.09's checked length: its sum sits at 0x1ca44
+        self.payload = bytes(p)
         f = bytearray(flash())
         f[0x5000:0x5000 + restore.SIZE] = self.payload
         self.good = bytes(f)
@@ -272,17 +274,33 @@ class RestoreTest(unittest.TestCase):
         self.assertTrue(all(r[:3] == b"\x81\x05\x05" for r in sim.sent))
         self.assertEqual(bytes(sim.state["flash"]), self.good)
 
-    def test_write_rewrites_bank_a_sector_by_sector_with_its_first_sector_last(self):
+    def test_the_checked_sum_is_erased_first_and_written_last(self):
         sim.state["flash"][0x10000:0x10010] = b"\0" * 16   # a damaged sector, so the write shows
         self.run_restore(write=True)
         self.assertEqual(self.lines[-1], "done 8BitDo's firmware 1.09 restored")
         self.assertEqual(bytes(sim.state["flash"]), self.good)
-        erases = [(a, n) for c, a, n in self.boot_ops() if c == 4]
-        self.assertEqual(erases, [(a, 0x1000) for a in self.rs.ORDER])
-        self.assertEqual(erases[-1][0], 0x5000)
-        writes = [a for c, a, n in self.boot_ops() if c == 3]
+        ops = [(c, a) for c, a, n in self.boot_ops() if c in (3, 4)]
+        erases = [a for c, a in ops if c == 4]
+        self.assertEqual(erases[0], 0x1C000)                       # bank A fails the start-up check from here on
+        self.assertNotIn(0x5000, erases)                           # the header sector is already right: never blank
+        self.assertEqual(sorted(erases), [a for a in range(0x6000, 0x29000, 0x1000)])
+        self.assertEqual(ops[-1], (3, 0x1CA44))                    # the sum is the very last write
+        self.assertEqual([n for c, a, n in self.boot_ops() if c == 3 and a == 0x1CA44], [self.rs.SIZE])
+        writes = [a for c, a in ops if c == 3]
         self.assertTrue(all(0x5000 <= a < self.rs.END for a in writes))
         self.assertEqual(sim.state["mode"], "app")
+
+    def test_any_interruption_leaves_the_sum_blank(self):
+        for fail in (5, 200, 2000):
+            sim.sent.clear()
+            sim.state.update(mode="app", flash=bytearray(self.good))
+            real = sim.Boot
+            with unittest.mock.patch.object(sim, "Boot", lambda f: real(f, fail_after=fail)):
+                with self.assertRaises(core.Stop):
+                    self.run_restore(write=True)
+            self.assertEqual(bytes(sim.state["flash"][0x1CA44:0x1CA48]), b"\xff" * 4, fail)
+            self.assertEqual(bytes(sim.state["flash"][0x5000:0x6000]), self.good[0x5000:0x6000])
+            sim.state["mode"] = "app"
 
     def test_an_interrupted_write_stays_in_update_mode_and_finishes_when_run_again(self):
         real = sim.Boot
@@ -291,6 +309,7 @@ class RestoreTest(unittest.TestCase):
                 self.run_restore(write=True)
         self.assertIn("half-written", str(e.exception))
         self.assertIn("don't hold Home", str(e.exception))
+        self.assertIn("0x32000", str(e.exception))
         self.assertEqual(sim.state["mode"], "boot")
         self.assertEqual(bytes(sim.state["flash"][0x5000:0x6000]), self.good[0x5000:0x6000])   # the header untouched
         self.run_restore(write=True)
