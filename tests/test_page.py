@@ -904,7 +904,7 @@ class HelpTest(PageCase):
     def test_the_hero_lists_the_tweaks_in_the_toggles_order(self):
         dom = self.server.dom()
         chips = [" ".join(n.text) for n in dom.find("chips").children]
-        self.assertEqual(chips[:3], ["Xbox Series X|S controller over Bluetooth", "Rumble over Bluetooth", "Xbox 360 controller over cable"])
+        self.assertEqual(chips[:4], ["Xbox Series X|S controller over Bluetooth", "Rumble over Bluetooth", "Long rumble over Bluetooth", "Xbox 360 controller over cable"])
         self.assertLess(chips.index("Processor rest between radio events"), chips.index("Finer stick movement"))
         self.assertTrue(chips[-1].startswith("Home ring"))
     def test_help_opens_at_the_top_with_its_contents(self):
