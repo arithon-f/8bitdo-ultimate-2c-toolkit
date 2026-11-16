@@ -114,6 +114,10 @@
       <section class="cd"><h2>Problem Report</h2>
         <p>Creates a text you can attach to a bug report, with the device IDs, the firmware's state and the latest log lines. It never includes your controller's address or its Bluetooth pairings.</p>
         <button id="report-open" class="sec small job">Create Problem Report</button></section>
+      <section class="cd" id="battlog-card"><h2>Battery Log</h2>
+        <p>With Processor rest, the firmware writes down the battery's voltage and level once a minute while the controller runs on battery. The log stays on the controller, and is only read when you save it here, for example to send it with a problem report. It holds about 270 hours on battery, and then it stops.</p>
+        <button id="battlog-save" class="sec small job">Save Battery Log</button>
+        <p class="res" id="battlog-result" hidden></p></section>
     </div>
     <section class="danger-zone" id="force-zone">
       <div><p class="calm">Last-resort install for firmware that can't be identified.</p>
@@ -197,7 +201,7 @@
     <li><b>Battery alerts.</b> The ring blinks slowly while charging and quickly when the battery is at 15 % or less, even if you turned it off. The motors give one short pulse when charging starts, one long pulse when it completes, and two short pulses at 5 % or less, again every 5 minutes. It needs the Home ring's code.</li>
     <li><b>Controller settings.</b> Adds what the Settings tab changes: sticks, triggers, L4 and R4, vibration, power and button remapping. With everything at its default, the controller runs its original code for these. It needs the Home ring's code.</li>
     <li><b>Fixes.</b> Moving a stick counts as using the controller, so playing only with sticks no longer turns it off after 15 minutes. A dropped connection gets its full search time. Unplugging the cable with the switch in the Bluetooth position restarts the controller, so it finds the Mac at once. It also closes the firmware update over Bluetooth, which needs no encryption. It needs the Home ring's code.</li>
-    <li><b>Processor rest.</b> Over Bluetooth on battery, the controller's processor normally runs without a pause. With this tweak it stops for up to a millisecond at a time while it waits for the next exchange with the computer, which may make the battery last longer. A watchdog also restarts the controller if it ever stops responding.</li>
+    <li><b>Processor rest.</b> Over Bluetooth on battery, the controller's processor normally runs without a pause. With this tweak it stops for up to a millisecond at a time while it waits for the next exchange with the computer, which may make the battery last longer. A watchdog also restarts the controller if it ever stops responding. Since version 1.1, it also keeps the battery log you can save in the Diagnostics tab.</li>
     <li><b>Finer stick movement.</b> The firmware ignores small stick changes, which makes slow movement advance in small jumps. This lowers that limit to just above the noise measured on one controller. A stick held still away from the centre may still move by one step now and then, which is why it's off by default.</li>
     <li><b>Faster button reading.</b> The controller reads its buttons and triggers every 5 ms. This reads them every 2.5 ms, so a press reaches the game about 1.25 ms sooner on average. Holding Home and turbo keep their usual timing. The firmware has no other debounce, so a worn button could occasionally register twice. That's why it's off by default.</li>
     <li><b>Faster Bluetooth input.</b> Over Bluetooth the controller sends its input at the moments the computer sets for it. Every install asks for one every 12.5 ms. This asks for one every 7.5 ms, the shortest Bluetooth allows, so input can arrive up to 5 ms sooner where the system follows the request. It hasn't been tested on hardware yet; macOS keeps its own 15 ms. The controller wakes more often, so its battery runs down sooner. That's why it's off by default.</li>
@@ -219,6 +223,7 @@
   <p>The controller also has its own option for the sticks: holding − (Select) and + (Start) together for about 4 seconds switches a 14 % dead zone on the sticks on and off. The controller buzzes once when it turns on and twice when it turns off, and it remembers the setting. It's part of 8BitDo's firmware.</p>
   <p><b>Firmware Details</b> shows what the app read from the controller, including where the version came from and whether a firmware update is pending.</p>
   <p><b>Create Problem Report</b> collects the controller's state and the last task's log for a bug report. It never includes the controller's address, its Bluetooth pairings or your backup.</p>
+  <p><b>Save Battery Log</b> reads, by cable, the log that firmware installed with Processor rest keeps: once a minute on battery, the battery's voltage and level, whether it was connected over Bluetooth and whether it was vibrating. Nothing is written while the controller has a cable, and the log stays through power-offs, so it covers a whole charge until the controller turns itself off. It's saved as a CSV file next to your backups, and holds nothing else about the controller.</p>
   <p><b>Install Firmware 1.09 Anyway…</b> is only for a controller whose firmware can't be identified. It erases the firmware and installs 8BitDo's original 1.09 without being able to check beforehand that it's right for the controller, so use it only if Restore doesn't work.</p>
     </section>
     <section data-hsec="dongle">

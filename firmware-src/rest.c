@@ -114,14 +114,15 @@ void rest_poll(void)
 	t[3] = WD_FEED;
 }
 
-#if defined(BATT_LOG) && !defined(HOST)
-/* Battery log test build only (tools/stalltest in the private notes), run in place from the dead soft-float subtraction at
- * 0x9964 (packer.ld): once a minute while the controller is on, an 8-byte
- * record appended to the blank flash at 0x53000-0x73000 (above the copy of the original firmware, used by nothing), read
- * back later from a full backup: power-on number, half the connection interval in us / 32 (0x842e00), minutes since
- * power-on (u16), battery mV (u16, 0x843424), the firmware's percentage (0x843415), and flags: 1 external power (PD0),
- * 2 connected over Bluetooth, 4 a rumble hold running. It stops when the area is full. Its state sits in the free part of
- * the Home ring's state, zeroed at boot. */
+#ifndef HOST
+/* Battery log, installed with Processor rest (battery_log): run in place from the dead soft-float subtraction at 0x9964
+ * (packer.ld). Once a minute on battery, an 8-byte record appended to the blank flash at 0x53000-0x73000 (above the
+ * copy of the original firmware, used by nothing), which the app reads by cable: power-on number, half the connection
+ * interval in us / 32 (0x842e00), minutes since power-on (u16), battery mV (u16, 0x843424), the firmware's percentage
+ * (0x843415), and flags: 1 external power (PD0; never set now, as nothing is written on external power, which also keeps
+ * a backup by cable steady), 2 connected over Bluetooth, 4 a rumble hold running. Flash keeps it through power-offs; a
+ * new power-on goes on after the last record. It stops when the area is full. Its state sits in the free part of the
+ * Home ring's state, zeroed at boot. */
 #define LOG_START 0x53000
 #define LOG_END 0x73000
 #define LOG ((volatile u32 *)0x841670) /* +0 next free record (0 until found), +4 100 ms calls this minute, +8 minutes since
@@ -146,23 +147,29 @@ __attribute__((noinline)) void battlog_poll(void)
 		return;
 	l[1] = 0;
 	l[2] = l[2] + 1;
-	if (a >= LOG_END)
+	if (a >= LOG_END || (*IO(0x800518) & 1)) /* full, or on external power */
 		return;
 	r[0] = l[3] | (*(volatile u32 *)0x842e00 >> 5 & 0xff) << 8 | l[2] << 16;
 	r[1] = (*(volatile u32 *)0x843424 & 0xffff) | *(volatile u8 *)0x843415 << 16
-	       | ((*IO(0x800518) & 1) | (stock_connected_bt() ? 2 : 0) | (MOTOR_HOLD ? 4 : 0)) << 24;
+	       | ((stock_connected_bt() ? 2 : 0) | (MOTOR_HOLD ? 4 : 0)) << 24;
 	flash_unlock();
 	FLASH_WRITE(a, 8, (u8 *)r);
 	l[0] = a + 8;
+}
+
+void rest_main_poll(void);
+
+/* The main loop's 100 ms call at 0xa484, with the battery log: the log, then Processor rest's own call. */
+void log_main_poll(void)
+{
+	battlog_poll();
+	rest_main_poll();
 }
 #endif
 
 /* The main loop's call at 0xa484 comes here instead of main_poll, which it still makes. */
 void rest_main_poll(void)
 {
-#if defined(BATT_LOG) && !defined(HOST)
-	battlog_poll();
-#endif
 	rest_poll();
 	main_poll();
 }

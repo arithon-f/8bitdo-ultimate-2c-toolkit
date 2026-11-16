@@ -312,6 +312,7 @@ def cmd_patch(args, store):
             raise Exit(2, f"The dongle's tweaks are {', '.join(dng.TWEAKS)}. Nothing was written.")
         return _dongle_change(args, store, f, keys)
     keys += ["ble_interval"] if keys and "ble_interval" not in keys else []   # as the app: every install asks for 12.5 ms
+    keys += ["battery_log"] if "cpu_rest" in keys and "battery_log" not in keys else []   # and keeps the battery log
     stock = None
 
     def plan(ch, mode):

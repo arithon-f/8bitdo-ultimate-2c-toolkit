@@ -370,7 +370,7 @@ class SettingsTabTest(PageCase):
 
     def test_installing_includes_settings_by_default_with_the_ring_code(self):
         dom = self.server.dom("&diagsim=boot&scenario=installed")
-        self.assertEqual(dom.find("diag-snap").all_text(), "bt_xbox,bt_rumble,cable_360,dim_leds,battery_alerts,settings,fixes,cpu_rest,ring_normal,ble_interval")
+        self.assertEqual(dom.find("diag-snap").all_text(), "bt_xbox,bt_rumble,cable_360,dim_leds,battery_alerts,settings,fixes,cpu_rest,ring_normal,ble_interval,battery_log")
 
     def test_sticks_and_triggers_have_their_controls(self):
         dom = self.server.dom(self.READY)
@@ -628,7 +628,7 @@ class ControllerTestCard(PageCase):
 
     def test_original_firmware_keeps_the_suggested_tweaks(self):
         dom, _, _ = self.body("boot&scenario=installed")
-        self.assertEqual(dom.find("diag-snap").all_text(), "bt_xbox,bt_rumble,cable_360,dim_leds,battery_alerts,settings,fixes,cpu_rest,ring_normal,ble_interval")
+        self.assertEqual(dom.find("diag-snap").all_text(), "bt_xbox,bt_rumble,cable_360,dim_leds,battery_alerts,settings,fixes,cpu_rest,ring_normal,ble_interval,battery_log")
 
     def ring_button(self, dom, index):
         return next(n for n in dom.find("ring-card").walk() if n.attrs.get("data-live") == str(index))

@@ -152,12 +152,16 @@ def _make() -> dict[str, Recipe]:
             Edit(0xA2DC, _blob("hsweep.bin")),                   # two ADC passes per report, so its average means something
         ), requires_group="ring"),
         Recipe("cpu_rest", "Processor rest between radio events", (), (
-            Edit(0xA484, _blob("resthook.bin")),                 # the main loop's 100 ms call feeds the watchdog first; takes over the ring's pollhook
+            Edit(0xA484, _blob("resthook.bin"), superseded_by="battery_log"),  # the main loop's 100 ms call feeds the watchdog first; takes over the ring's pollhook
             Edit(0x6020, _blob("wdog.bin").ljust(0x94, b"\0")),  # rest_main_poll, run from RAM at 0x20 (dead RAM code)
             Edit(0x848C, _blob("stall.bin").ljust(0x74, b"\0")), # stall_hook, run from RAM at 0x248c (dead RAM code)
             Edit(0xA4AE, _blob("hstall.bin")),                   # the Bluetooth branch's motor call, then the stall
             Edit(REST_FLAG, b"\1"),
         ), requires_group="ring"),
+        Recipe("battery_log", "Battery log", ("cpu_rest",), (   # installed with Processor rest, never shown
+            Edit(0x9964, _blob("battlog.bin").ljust(0x9CAC - 0x9964, b"\0")),   # log_main_poll and battlog_poll, in the dead soft-float subtraction
+            Edit(0xA484, _blob("loghook.bin")),                  # the main loop's 100 ms call: the log first, then rest_main_poll
+        )),
         Recipe("ble_interval", "Bluetooth connection request of 12.5 ms", (), (
             Edit(0xA0DE, bytes.fromhex("0aa00aa100a2c8a3"), superseded_by="ble_fast"),  # min = max 12.5 ms, latency 0, timeout 2 s, instead of 7.5 ms and latency 59
         )),
@@ -235,6 +239,16 @@ def build(stock: bytes, keys, stock_sha256=None, region_sha256=None, remainder_s
     return bytes(img)
 
 
+def _taken_over_by(o: Edit, e: Edit) -> bool:
+    """Whether e's recipe takes o's region over, itself or through the recipes that take it over in turn."""
+    k = o.superseded_by
+    while k:
+        if e in RECIPES[k].edits:
+            return True
+        k = next((x.superseded_by for x in RECIPES[k].edits if x.addr == o.addr), None)
+    return False
+
+
 def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha256=None) -> State:
     """Which tweaks an app area holds, or unknown if any edit region is neither stock nor a tweak's, or the rest differs.
     A bare payload counts as having a blank tail."""
@@ -249,8 +263,9 @@ def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha
             return "new"
         if _sha(got) == regions[(e.addr, e.size)]:
             return "stock"
-        # the region a tweak takes over from another's (noop callback -> rumble) reads as untouched while the other is present
-        if any(o.addr == e.addr and o.superseded_by and e in RECIPES[o.superseded_by].edits and got == o.new.ljust(e.size, b"\0")
+        # the region a tweak takes over from another's (noop callback -> rumble) reads as untouched while the other is present,
+        # also down a chain (the ring's pollhook -> cpu_rest's resthook -> battery_log's loghook)
+        if any(o.addr == e.addr and _taken_over_by(o, e) and got == o.new.ljust(e.size, b"\0")
                for r in RECIPES.values() for o in r.edits):
             return "stock"
         return "other"

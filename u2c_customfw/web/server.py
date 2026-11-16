@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """HTTP server bound to 127.0.0.1 on a random port. API calls need the session token in X-Token; the Host header must
 be this address (against DNS rebinding)."""
+import datetime
 import json
 import os
 import secrets
+import subprocess
 import sys
 import threading
 import time
@@ -14,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from .. import __version__, disclaimer, settings, state, update
 from .. import cli
 from ..firmware import recipes
-from ..ops import backup as bkp, dongle, probe, report as report_mod, shown
+from ..ops import backup as bkp, battlog, dongle, probe, report as report_mod, shown
 from ..ops import settings as settings_ops
 from ..ops.plan import OpError
 from ..protocol import ProtocolError, app
@@ -86,6 +88,32 @@ def make_server(store: Path, port: int = 0):
             self.send(200, json.dumps({"version": __version__, "accepted": state.accepted(store), "devices": found,
                                        "backups": backups,
                                        "disclaimer": disclaimer.text()}))
+
+        def api_battery_log(self):
+            """Read the battery log by cable and save it as CSV in the app's folder, shown in Finder."""
+            if runner.running:
+                return self.send(409, json.dumps({"error": "Another task is running."}))
+            ours = [f for f in cli.find() if f.mode in ("cable", "cable_360")]
+            if len(ours) != 1:
+                return self.send(200, json.dumps({"error": "Connect the controller by cable to save its battery log."}))
+            try:
+                ch = cli.open_channel(ours[0].info, 0x81)
+                try:
+                    probe._check_device(ch, ours[0].mode, None)
+                    rows = battlog.read(ch, ours[0].mode)
+                finally:
+                    ch.close()
+            except PermissionDenied as e:
+                return self.send(200, json.dumps({"error": str(e), "permission": True}))
+            except (OpError, OSError, ProtocolError) as e:
+                return self.send(200, json.dumps({"error": str(e)}))
+            if not rows:
+                return self.send(200, json.dumps({"records": 0}))
+            path = Path(store) / f"battery-log-{datetime.datetime.now():%Y%m%d-%H%M%S}.csv"
+            path.write_text(battlog.csv(rows))
+            if sys.platform == "darwin" and not os.environ.get("U2C_SIM"):
+                subprocess.run(["/usr/bin/open", "-R", str(path)], check=False)
+            return self.send(200, json.dumps({"records": len(rows), "summary": battlog.summary(rows), "name": path.name}))
 
         def api_busy(self):
             """For the Mac app's quit and close guard: the server knows, even when the page has lost track."""
@@ -329,6 +357,8 @@ def make_server(store: Path, port: int = 0):
                 return self.api_ring(req)
             if route == "/api/settings":
                 return self.api_settings(req)
+            if route == "/api/battery-log":
+                return self.api_battery_log()
             if route == "/api/report":
                 return self.send(200, json.dumps({"text": report_mod.report(cli.find(), None, report_mod.log_tail(store), report_mod.clean_extras(req))}))
             if route in ("/api/patch", "/api/restore") and not state.accepted(store):

@@ -27,13 +27,13 @@ tc32-elf-ld -N -Ttext=0x1734c --section-start=.lrhooka=0xfa72 --section-start=.l
 tc32-elf-objcopy -O binary -j .text "$out/longrumble.elf" "$out/longrumble.bin"
 for s in lrhooka lrhookb lrwrite; do tc32-elf-objcopy -O binary -j ".$s" "$out/longrumble.elf" "$out/$s.bin"; done
 [ "$(wc -c < "$out/longrumble.bin")" -le 116 ] || { echo "longrumble.bin is bigger than the stock Report Map's 116 bytes" >&2; exit 1; }
-for s in packer noop rumble led hook ringtail ringhook vhooka vhookb pollhook hgamea hgameb hbuzza hbuzzb hidle hstickl hstickr hscan hidletask hunplug hota hsweep resthook hstall hmeter battlog wdog stall sram; do tc32-elf-objcopy -O binary -j ".$s" "$out/packer.elf" "$out/$s.bin"; done
+for s in packer noop rumble led hook ringtail ringhook vhooka vhookb pollhook hgamea hgameb hbuzza hbuzzb hidle hstickl hstickr hscan hidletask hunplug hota hsweep resthook hstall hmeter battlog loghook wdog stall sram; do tc32-elf-objcopy -O binary -j ".$s" "$out/packer.elf" "$out/$s.bin"; done
 tc32-elf-objdump -d "$out/packer.elf" > "$out/packer.dis"
 python3 -c "import sys; open(sys.argv[2],'wb').write(bytes.fromhex(open(sys.argv[1]).read()))" report-map.hex "$out/report-map.bin"
 if [ -n "${EXTRA_CFLAGS:-}" ] && [ -z "${TEST_COPY:-}" ]; then  # a test build mustn't replace what ships
 	echo "Built in $out with $EXTRA_CFLAGS. The package's blobs are unchanged." ; exit 0
 fi
 mkdir -p "$blobs"
-cp "$out"/{packer,noop,rumble,led,hook,ringtail,ringhook,vhooka,vhookb,pollhook,hgamea,hgameb,hbuzza,hbuzzb,hidle,hstickl,hstickr,hscan,hidletask,hunplug,hota,hsweep,resthook,hstall,wdog,stall,sram,report-map,dinput,longrumble,lrhooka,lrhookb,lrwrite}.bin "$blobs/"
+cp "$out"/{packer,noop,rumble,led,hook,ringtail,ringhook,vhooka,vhookb,pollhook,hgamea,hgameb,hbuzza,hbuzzb,hidle,hstickl,hstickr,hscan,hidletask,hunplug,hota,hsweep,resthook,hstall,battlog,loghook,wdog,stall,sram,report-map,dinput,longrumble,lrhooka,lrhookb,lrwrite}.bin "$blobs/"
 (cd "$blobs" && { sha256sum *.bin > MANIFEST 2>/dev/null || shasum -a 256 *.bin > MANIFEST; })  # the *02.bin are 0.2.0's, kept to recognise its firmware
 ls -l "$blobs"

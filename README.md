@@ -73,7 +73,7 @@ If something doesn't work, the [FAQ](docs/faq.md) covers the usual problems.
 - [docs/faq.md](docs/faq.md): installing, update mode, re-pairing, rumble and compatibility.
 - [docs/tweaks.md](docs/tweaks.md): what each tweak changes, for the controller and the dongle.
 - [docs/settings.md](docs/settings.md): the Settings tab, which changes the controller without reinstalling.
-- [docs/diagnostics.md](docs/diagnostics.md): the controller test, firmware details and problem reports.
+- [docs/diagnostics.md](docs/diagnostics.md): the controller test, firmware details, problem reports and the battery log.
 - [docs/firmware-notes.md](docs/firmware-notes.md): flash layout, update and bootloader protocols, RAM code.
 - [docs/bluetooth-and-rumble.md](docs/bluetooth-and-rumble.md): how the Bluetooth Xbox identity and rumble work.
 - [docs/porting.md](docs/porting.md): porting the app to Linux.

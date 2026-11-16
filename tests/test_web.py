@@ -47,6 +47,28 @@ class WebTest(unittest.TestCase):
         self.assertEqual(status, 200)
         return [json.loads(l[6:]) for l in text.splitlines() if l.startswith("data: ")]
 
+    def test_the_battery_log_is_read_by_cable_and_saved_as_csv(self):
+        import struct
+        flash = bytearray(controller_flash())
+        rows = [struct.pack("<BBHHBB", 3, 0xC3, m, 4100 - m, 99, 2) for m in range(1, 181)]   # 3 h on battery, connected
+        flash[0x53000:0x53000 + 8 * len(rows)] = b"".join(rows)
+        info = transport.DeviceInfo(0x045E, 0x028E, 0xFF7A, "USB", "x", None)
+        with mock.patch.object(cli, "find", lambda: [devices.Found(info, "cable_360")]), \
+                mock.patch.object(cli, "open_channel", lambda i, rid: SimApp(bytes(flash))), mock.patch.dict("os.environ", {"U2C_SIM": "1"}):
+            got = json.loads(self.call("POST", "/api/battery-log")[1])
+        self.assertEqual(got["records"], 180)
+        self.assertIn("3.0 hours on battery from 1 power-on", got["summary"])
+        lines = (self.store / got["name"]).read_text().splitlines()
+        self.assertEqual(lines[0], "power_on,minute,mv,percent,connected,rumble,interval_ms")
+        self.assertEqual(lines[1], "3,1,4099,99,1,0,12.48")
+        self.assertEqual(len(lines), 181)
+        blank = controller_flash()   # nothing logged yet
+        with mock.patch.object(cli, "find", lambda: [devices.Found(info, "cable_360")]), \
+                mock.patch.object(cli, "open_channel", lambda i, rid: SimApp(blank)):
+            self.assertEqual(json.loads(self.call("POST", "/api/battery-log")[1]), {"records": 0})
+        with mock.patch.object(cli, "find", lambda: []):
+            self.assertIn("by cable", json.loads(self.call("POST", "/api/battery-log")[1])["error"])
+
     def test_report_endpoint_with_a_bad_body(self):
         with mock.patch.object(cli, "find", lambda: []):
             for body in ({"macos": "x"}, {"boot_identity": "x"}, {"macos": {"name": 5}}):

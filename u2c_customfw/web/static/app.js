@@ -48,7 +48,7 @@ const RING_NAMES = { ring_normal: "normal", ring_25: "25 %", ring_5: "5 %", ring
 let ringKept = "", dongleRead = null;  // the Home ring level installed, kept by the next install; a level saved from Settings overrides it at power-on
 const RING_CODE_USERS = ["battery_alerts", "settings", "fixes", "stick_precision", "cpu_rest"];
 const needsRingCode = () => tweakBoxes().some((x) => RING_CODE_USERS.includes(x.value) && x.checked);
-const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval"] : t; };  // every install asks for 12.5 ms
+const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval", ...(t.includes("cpu_rest") ? ["battery_log"] : [])] : t; };  // every install asks for 12.5 ms; with Processor rest, it keeps the battery log
 const tweakTitles = () => [...tweakBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent),
   ...(ringKept || needsRingCode() ? [`Home ring: ${RING_NAMES[ringKept || "ring_normal"]}`] : [])];
 
@@ -151,10 +151,11 @@ function render() {
 
   const dRestore = dongleReady && !!fw.restore_backup, dStock = dongleReady && dBacked && fw.stock_ok;
   const can = dongleOnly ? { backup: !boot, "patch-dry": dongleReady && dBacked, "patch-write": dongleReady && dBacked,
-    "restore-backup-dry": dRestore, "restore-backup": dRestore, "restore-stock-dry": dStock, "restore-stock": dStock, "force-open": false, "report-open": true, refresh: true }
+    "restore-backup-dry": dRestore, "restore-backup": dRestore, "restore-stock-dry": dStock, "restore-stock": dStock, "force-open": false, "report-open": true, "battlog-save": false, refresh: true }
     : { backup: !!ctrl, "patch-dry": patchable, "patch-write": patchable,
     "restore-backup-dry": !!ctrl && !!fw && !!fw.restore_backup, "restore-backup": !!ctrl && !!fw && !!fw.restore_backup, "restore-stock-dry": !!ctrl && backed && on109, "restore-stock": !!ctrl && backed && on109,
-    "force-open": boot && backed /* firmware that can't be identified may not know the command that enters update mode */, "report-open": true, refresh: true };
+    "force-open": boot && backed /* firmware that can't be identified may not know the command that enters update mode */, "report-open": true,
+    "battlog-save": !!ctrl && !boot, refresh: true };
   for (const [id, ok] of Object.entries(can)) $(id).disabled = off || !ok;
   $("backup").classList.toggle("sec", dongleOnly ? dBacked : backed);   // once there's a backup, installing is the main step
   const stockWhy = dongleOnly || !ctrl || !backed || !fw || fw.error || on109 ? "" : fw.version ? `Not available, because this controller has firmware ${fw.version.toFixed(2)}.`
@@ -433,6 +434,16 @@ $("report-open").onclick = async () => {
 $("report-copy").onclick = async () => {
   try { await navigator.clipboard.writeText($("report-text").textContent); $("report-copy").textContent = "Copied"; }
   catch (e) { getSelection().selectAllChildren($("report-text")); }  // then ⌘C
+};
+$("battlog-save").onclick = async () => {
+  const out = $("battlog-result");
+  reading = true; render(); out.hidden = false; out.textContent = "Reading the log…";
+  try {
+    const r = await api("POST", "/api/battery-log", {});
+    out.textContent = r.error ? r.error : r.records ? `Saved ${r.summary}, as “${r.name}” in the app's folder.`
+      : "The log is empty. It starts once firmware installed by version 1.1 or later, with Processor rest, runs on battery.";
+  } catch (e) { out.textContent = e.message; }
+  reading = false; render();
 };
 $("report-close").onclick = () => { $("report").close(); $("report-copy").textContent = "Copy"; };
 render(); refresh();

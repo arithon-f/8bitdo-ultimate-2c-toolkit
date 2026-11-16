@@ -302,6 +302,23 @@ class FromEarlierVersionsTest(unittest.TestCase):
         st = recipes.identify(img, **self.k)
         self.assertEqual((st.known, st.recipes), (True, tuple(sorted(self.FOUR + ["cpu_rest"]))))
 
+    def test_the_battery_log_comes_with_cpu_rest_and_1_0s_cpu_rest_is_still_recognised(self):
+        img = recipes.build(self.stock, self.FOUR + ["cpu_rest", "battery_log"], **self.k)
+        at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
+        self.assertEqual(at(0xA484, 4), recipes._blob("loghook.bin"))   # the 100 ms call goes to the log first
+        self.assertEqual(at(0x9964, len(recipes._blob("battlog.bin"))), recipes._blob("battlog.bin"))
+        self.assertEqual(at(0x6020, len(recipes._blob("wdog.bin"))), recipes._blob("wdog.bin"))   # Processor rest's own code as before
+        st = recipes.identify(img, **self.k)
+        self.assertEqual((st.known, st.recipes), (True, tuple(sorted(self.FOUR + ["cpu_rest", "battery_log"]))))
+        old = recipes.build(self.stock, self.FOUR + ["cpu_rest"], **self.k)   # what 1.0 installed
+        self.assertEqual(recipes.identify(old, **self.k).recipes, tuple(sorted(self.FOUR + ["cpu_rest"])))
+        ring_only = recipes.build(self.stock, KEYS + ["ring_5"], **self.k)    # the call as the ring alone has it
+        self.assertEqual(recipes.identify(ring_only, **self.k).recipes, tuple(sorted(KEYS + ["ring_5"])))
+        with self.assertRaises(RecipeError):
+            recipes.build(self.stock, self.FOUR + ["battery_log"], **self.k)
+        from u2c_customfw.ops import shown
+        self.assertNotIn("battery_log", shown(st.recipes))
+
     def test_cpu_rest_needs_a_ring_level(self):
         with self.assertRaises(RecipeError) as e:
             recipes.build(self.stock, ["cpu_rest"], **self.k)
