@@ -14,7 +14,7 @@ def check_unit(ch, backup, mode: str = "boot") -> None:
         raise OpError("This isn't a full backup of the controller.")
     try:
         if mode == "boot" and boot.kind(ch) != "controller":
-            raise OpError("The device in update mode isn't a controller. The 2.4 GHz dongle isn't supported.")
+            raise OpError("The device in update mode isn't the controller, so nothing was written to it.")
         if probe._read(ch, mode, 0, image.BOOT_END) != backup.data[:image.BOOT_END]:
             raise OpError("This device doesn't match the backup, because its update-mode code is different. Nothing was written.")
         mac = image.MAC_SECTOR

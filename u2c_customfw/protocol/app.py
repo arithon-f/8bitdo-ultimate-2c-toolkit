@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Normal-mode reads through the running controller's update channel (output report 0x81, input report 0x02).
 
-Reads are `81 05 05` (any address, at most 46 bytes). The only other commands sent are the Home ring's two, which
-only the ring tweak acts on, with no reply: `81 05 00 52 <level>` and `81 05 00 53` (see docs/firmware-notes.md). Reads are tried
+Reads are `81 05 05` (any address, at most 46 bytes). The other commands sent have no reply and only our tweaks act on
+them: the Home ring's `81 05 00 52 <level>` and `81 05 00 53`, and the settings' `54` to `5a` (see docs/firmware-notes.md). Reads are tried
 first; if they get no answer, the session start `81 05 00 21 01` (it only replies) is sent, and if reads still fail,
 `81 05 c1`, which turns the flash's write protection off until the controller restarts and changes no data.
 `81 05 00 51 00` restarts the controller into update mode, only to install or restore by cable (enter_update_mode).

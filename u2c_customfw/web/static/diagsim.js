@@ -26,7 +26,7 @@
     if (path.startsWith("/api/ring")) return query.get("ringfail") ? new Response(JSON.stringify({ error: "The controller said no." }), { status: 409 }) : json({ ok: true });
     if (path.startsWith("/api/firmware") && device === "bluetooth_xbox") return json({ note: "Connect the controller by cable to see or change its firmware. Over Bluetooth, you can test it in Diagnostics and change the Home ring in Settings." });
     if (path.startsWith("/api/firmware") && String(device).startsWith("dongle")) return json({ device: "dongle", paired: device === "dongle_paired", boot: false, backed: !query.has("nodonglebackup"), stock_ok: true,
-      restore_backup: query.has("nodonglebackup") ? null : { name: "dongle-20261108-120000.bin", taken: "8 Nov 2026 at 12:00", firmware: "the original firmware 1.03" }, known: true, version: 1.03, tweaks: [{ key: "dongle_360", title: "Xbox 360 controller over 2.4 GHz", on: !query.has("stockdongle") }] });
+      restore_backup: query.has("nodonglebackup") ? null : { name: "dongle-20261108-120000.bin", taken: "8 Nov 2026 at 12:00", firmware: "the original firmware 1.03" }, known: true, version: 1.03, tweaks: [{ key: "dongle_360", title: "Xbox 360 controller over 2.4 GHz", on: !query.has("stockdongle") }, { key: "dongle_dinput", title: "D-input mode with B + Home", on: false }] });
     if (path.startsWith("/api/firmware") && query.get("permission")) return json({ error: "macOS refused access to the controller. Allow Input Monitoring for this app in System Settings > Privacy & Security > Input Monitoring, then try again.", permission: true });
     const answer = await realFetch(url, options);
     if (path.startsWith("/api/firmware") && query.get("tweaks") && !window.simRestored) {  // &tweaks=all: the default tweaks with the ring at 5 %
@@ -37,6 +37,10 @@
       return json({ ...got, recipes, titles: all ? tweaks.filter((t) => t.on).map((t) => t.title) : ["Dimmer LEDs", "Home ring: 5 %"], tweaks, ring_level: 2, outdated: !!query.get("outdated") });
     }
     if (path.startsWith("/api/firmware") && query.get("identity") === "none") return json({ ...(await answer.json()), boot_identity: null });
+    if (path.startsWith("/api/firmware") && query.get("nobackup")) {   // none of this controller's backups either
+      const got = await answer.json();
+      return json(got.tweaks ? { ...got, unit_backups: [], restore_backup: null } : got);
+    }
     if (path.startsWith("/api/state") && (device || query.get("nobackup"))) {
       const got = await answer.json();
       return json({ ...got, ...(device ? { devices: [{ mode: device, name: "simulated" }] } : {}), ...(query.get("nobackup") ? { backups: [] } : {}) });

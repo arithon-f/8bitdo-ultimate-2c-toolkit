@@ -26,6 +26,7 @@ RING_CODE = (0x18400, 0x18FF0)                                # blank on stock
 ALERTS_FLAG = 0x18FF0
 SETTINGS_FLAG = 0x18FF1
 REST_FLAG = 0x18FF2
+LONG_RUMBLE_CODE = (0x1734C, 0x173C0)  # the stock Report Map: unused once bt_xbox points the Report Map attribute at its own
 STICK_THRESHOLD = 14  # stock's is 20; noise at rest spans about 25 counts, and 14 lets it through about once every 2 s
 
 
@@ -81,7 +82,7 @@ def _make() -> dict[str, Recipe]:
             Edit(0x18390, _blob("noop.bin"), superseded_by="bt_rumble"),
             Edit(0x177A0, _u32(len(_blob("report-map.bin")))),   # Report Map attribute: length
             Edit(0x177A8, _u32(0x18274)),                        # ... and value pointer
-            Edit(0x17764, _u32(0x18391)),                        # output report write callback (Thumb-style odd)
+            Edit(0x17764, _u32(0x18391), superseded_by="bt_rumble_long"),  # output report write callback (Thumb-style odd)
             Edit(0x173C0, bytes.fromhex("025e04130b0905")),      # PnP ID: USB-IF, 045e:0b13, v0509
             Edit(0x18098, bytes.fromhex("0302")),                # output report reference: ID 3, output
             Edit(0x172C0, bytes.fromhex("c403")),                # GAP appearance: gamepad
@@ -94,6 +95,12 @@ def _make() -> dict[str, Recipe]:
         Recipe("bt_rumble", "Rumble over Bluetooth", ("bt_xbox",), (
             Edit(0x18390, _blob("rumble.bin").ljust(0x70, b"\0"),
                  accepts=(_blob("rumble02.bin").ljust(0x70, b"\0"), _blob("rumble03.bin").ljust(0x70, b"\0"))),
+        )),
+        Recipe("bt_rumble_long", "Long rumble over Bluetooth", ("bt_rumble",), (
+            Edit(LONG_RUMBLE_CODE[0], _blob("longrumble.bin").ljust(LONG_RUMBLE_CODE[1] - LONG_RUMBLE_CODE[0], b"\0")),
+            Edit(0xFA72, _blob("lrhooka.bin")),                  # motor_set: any set with a hold ends the repeats
+            Edit(0xFA88, _blob("lrhookb.bin")),                  # motor_set: once the hold runs out, the next repeat, while connected
+            Edit(0x17764, _blob("lrwrite.bin")),                 # the write callback: long_write, rumble_write and then the repeats
         )),
         Recipe("cable_360", "Xbox 360 controller over cable", (), (
             Edit(0x17994, bytes.fromhex("ffffff")),              # class, subclass, protocol
@@ -145,20 +152,27 @@ def _make() -> dict[str, Recipe]:
             Edit(0xA2DC, _blob("hsweep.bin")),                   # two ADC passes per report, so its average means something
         ), requires_group="ring"),
         Recipe("cpu_rest", "Processor rest between radio events", (), (
-            Edit(0xA484, _blob("resthook.bin")),                 # the main loop's 100 ms call feeds the watchdog first; takes over the ring's pollhook
+            Edit(0xA484, _blob("resthook.bin"), superseded_by="battery_log"),  # the main loop's 100 ms call feeds the watchdog first; takes over the ring's pollhook
             Edit(0x6020, _blob("wdog.bin").ljust(0x94, b"\0")),  # rest_main_poll, run from RAM at 0x20 (dead RAM code)
             Edit(0x848C, _blob("stall.bin").ljust(0x74, b"\0")), # stall_hook, run from RAM at 0x248c (dead RAM code)
             Edit(0xA4AE, _blob("hstall.bin")),                   # the Bluetooth branch's motor call, then the stall
             Edit(REST_FLAG, b"\1"),
         ), requires_group="ring"),
+        Recipe("battery_log", "Battery log", ("cpu_rest",), (   # installed with Processor rest, never shown
+            Edit(0x9964, _blob("battlog.bin").ljust(0x9CAC - 0x9964, b"\0")),   # log_main_poll and battlog_poll, in the dead soft-float subtraction
+            Edit(0xA484, _blob("loghook.bin")),                  # the main loop's 100 ms call: the log first, then rest_main_poll
+        )),
         Recipe("ble_interval", "Bluetooth connection request of 12.5 ms", (), (
-            Edit(0xA0DE, bytes.fromhex("0aa00aa100a2c8a3")),     # min = max 12.5 ms, latency 0, timeout 2 s, instead of 7.5 ms and latency 59
+            Edit(0xA0DE, bytes.fromhex("0aa00aa100a2c8a3"), superseded_by="ble_fast"),  # min = max 12.5 ms, latency 0, timeout 2 s, instead of 7.5 ms and latency 59
         )),
         Recipe("fast_scan", "Faster button reading", (), (
             Edit(0xD288, (40000).to_bytes(4, "little")),         # the scan period, in 16 MHz ticks: 2.5 ms instead of 5
             Edit(0xC8E2, bytes.fromhex("13aa")),                 # Home still needs 50 ms held: 20 scans
             Edit(0xC8E6, bytes.fromhex("14a2")),
             Edit(0xC640, bytes.fromhex("0bae")),                 # turbo still switches every 30 ms: 12 scans
+        )),
+        Recipe("ble_fast", "Faster Bluetooth input", ("ble_interval",), (
+            Edit(0xA0DE, bytes.fromhex("06a006a100a2c8a3")),     # min = max 7.5 ms, the shortest Bluetooth allows; latency 0, timeout 2 s
         )),
     )}
 
@@ -225,6 +239,16 @@ def build(stock: bytes, keys, stock_sha256=None, region_sha256=None, remainder_s
     return bytes(img)
 
 
+def _taken_over_by(o: Edit, e: Edit) -> bool:
+    """Whether e's recipe takes o's region over, itself or through the recipes that take it over in turn."""
+    k = o.superseded_by
+    while k:
+        if e in RECIPES[k].edits:
+            return True
+        k = next((x.superseded_by for x in RECIPES[k].edits if x.addr == o.addr), None)
+    return False
+
+
 def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha256=None) -> State:
     """Which tweaks an app area holds, or unknown if any edit region is neither stock nor a tweak's, or the rest differs.
     A bare payload counts as having a blank tail."""
@@ -239,8 +263,9 @@ def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha
             return "new"
         if _sha(got) == regions[(e.addr, e.size)]:
             return "stock"
-        # the region a tweak takes over from another's (noop callback -> rumble) reads as untouched while the other is present
-        if any(o.addr == e.addr and o.superseded_by and e in RECIPES[o.superseded_by].edits and got == o.new.ljust(e.size, b"\0")
+        # the region a tweak takes over from another's (noop callback -> rumble) reads as untouched while the other is present,
+        # also down a chain (the ring's pollhook -> cpu_rest's resthook -> battery_log's loghook)
+        if any(o.addr == e.addr and _taken_over_by(o, e) and got == o.new.ljust(e.size, b"\0")
                for r in RECIPES.values() for o in r.edits):
             return "stock"
         return "other"

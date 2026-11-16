@@ -2,6 +2,7 @@
 """Full read-only backup of the controller's flash, over the cable (update channel) or in boot mode."""
 import datetime
 import hashlib
+import itertools
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,9 +70,10 @@ def _stored(store: Path):
             continue
 
 
-def find_backups(store: Path, bootloader: bytes, mac: bytes) -> list[Backup]:
-    """Backups in the store taken from this unit (same bootloader and address), newest first."""
-    return [b for b in _stored(store) if b.data[:image.BOOT_END] == bootloader
+def find_backups(store: Path, bootloader: bytes | None, mac: bytes) -> list[Backup]:
+    """Backups in the store taken from this unit (same bootloader and address), newest first. Without a bootloader, by the
+    address alone: enough to show them, not to write one back."""
+    return [b for b in _stored(store) if (bootloader is None or b.data[:image.BOOT_END] == bootloader)
             and image.same_unit(b.data[image.MAC_SECTOR:image.MAC_SECTOR + image.SECTOR], mac)]
 
 
@@ -97,9 +99,9 @@ def describe(state: recipes.State) -> str:
     return "firmware 1.09 with " + listed(titles)
 
 
-def find_original(backup: Backup, store: Path) -> bytes | None:
+def find_original(backup: Backup | None, store: Path) -> bytes | None:
     """The original firmware from this backup or any other, in bank A or in bank B. It's the same for every controller."""
-    for b in (backup, *_stored(store)):
+    for b in itertools.chain([backup] if backup else [], _stored(store)):
         for start in (image.BASE, image.BANK_B):
             bank = b.data[start:start + image.BANK_A_SIZE]
             s = recipes.identify(bank)

@@ -1,6 +1,6 @@
 # Firmware sources
 
-Our own code for the controller (Telink TC32, firmware 1.09). The built binaries are committed in
+Our own code for the controller (Telink TC32, firmware 1.09) and the dongle (firmware 1.03). The built binaries are committed in
 `u2c_customfw/firmware/blobs/` with a `MANIFEST` of their SHA-256, so users never need this toolchain.
 
 | Blob | Placed at | What it is |
@@ -9,6 +9,9 @@ Our own code for the controller (Telink TC32, firmware 1.09). The built binaries
 | `report-map.bin` | `0x18274` (zero tail after the image) | the Xbox Series X\|S HID report map (283 bytes, captured by xpadneo) |
 | `noop.bin` | `0x18390` | `noop_write`: accept output-report writes and ignore them |
 | `rumble.bin` | `0x18390` | `rumble_write`: Xbox rumble to the motor setter `0xfa68`, the Xbox duration as its hold; through `rumble_tail` when that code is there. A report with bit 7 of its first byte set is a Home ring command instead |
+| `longrumble.bin` | `0x1734c` (the stock Report Map, unused once `bt_xbox` points the attribute at `0x18274`), up to `0x173c0` | Long rumble over Bluetooth (`longrumble.s`): `long_write`, `long_hold` and `rearm`, so a rumble lasts its duration times (loop count + 1), as on an Xbox controller. Linked on its own by `build.sh`, with `rumble_write`'s address, and with the three blobs below |
+| `lrhooka.bin`, `lrhookb.bin` | `0xfa72`, `0xfa88` | inside the motor setter: its masking of the hold, and its read of the hold on a zero-hold call, replaced by calls to `long_hold` and `rearm` |
+| `lrwrite.bin` | `0x17764` | the output report's write callback, `long_write` instead of `rumble_write` (Thumb-style odd) |
 | `led.bin` | image `0x7738`, run address `0x1738` | `main_tick`: LED pins to weak drive strength, then the motor routine `0xfaa0` |
 | `hook.bin` | `0xa43c` | the main loop's call, redirected from `0xfaa0` to `main_tick` |
 | `ringtail.bin` | `0x18400`, up to `0x18ff0` (blank on stock), run in place | the Home ring and settings: `rumble_tail` first, then `ring_tick` (PWM1 at the level, alerts and pulses, every 200 ms), `main_poll` (the L4 + R4 chord and the end of a pulse, every 100 ms) and the vendor commands. Its state is at RAM `0x841640` (dead RAM code, zeroed at image `0x7640`), the level installed at image `0x76d0`, and the saved level in settings field `+25` |
@@ -27,6 +30,7 @@ Our own code for the controller (Telink TC32, firmware 1.09). The built binaries
 | `resthook.bin` | `0xa484` | the main loop's call, redirected from `main_poll` to `rest_main_poll`; takes over the ring's `pollhook.bin` when installed |
 | `stall.bin` | image `0x848c`, run address `0x248c` (dead RAM code: an unused `memcmp`) | `stall_hook`: the Bluetooth branch's `motor_set(0, 0, 0)`, then, on battery with no hold running, the CPU stops for 1 ms or until the radio wakes it (`0x80` to `0x80006f`, wake mask `0x800078`, timer0) |
 | `hstall.bin` | `0xa4ae` | the Bluetooth branch's call, redirected from `0xfa68` to `stall_hook` |
+| `dinput.bin` | the dongle (firmware 1.03), `0xff48` (zeros after the image) | `link_mode` (`dongle.s`): at link-up, D-input for the controller's `0x8f` packets as in the dongle's 1.00, X-input otherwise. Linked on its own by `build.sh`, with 1.03's addresses |
 | `ring02.bin`, `ringhook02.bin`, `rumble02.bin` | not installed | 0.2.0's versions, kept to recognise firmware it installed |
 | `ringtail03.bin`, `ringhook03.bin`, `vhooka03.bin`, `vhookb03.bin`, `pollhook03.bin`, `rumble03.bin` | not installed | 0.3.0's versions, kept to recognise firmware it installed |
 
@@ -49,3 +53,9 @@ The linker's warning that `.rumble` overlaps a previous section is expected: `no
 `python3 firmware-src/test.py` compiles `packer.c` natively (`-DHOST`) and checks every field of the input report
 against a model built from `report-map.hex`, the rumble handler against the Xbox rumble report, and `ring_tick` against
 the PWM1 and PB7 registers. It also compiles and runs `test_settings.c`, the tests of `settings.c`.
+
+`PYTHONPATH=. python3 firmware-src/test_longrumble.py ultimate-2c-controller-v1.09.dat` builds the image as the app does
+and runs Long rumble over Bluetooth in a Thumb-1 interpreter, with the stock rumble handler, motor setter and motor
+routine as built, each write through the callback pointer: Android's single long request with and without the tweak, a
+loop count honoured with no stop, SDL's resent request, pulses, buzzes, a Home ring command, a disconnection, and
+Android's and SDL's longest requests run to their end.

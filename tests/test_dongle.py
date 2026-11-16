@@ -8,13 +8,20 @@ from u2c_customfw.ops.plan import OpError
 from u2c_customfw.sim import SimApp
 
 rnd = random.Random(5)
-STOCK = bytearray(rnd.randbytes(dongle.SIZE))
-STOCK[dongle.DESC - dongle.BASE:dongle.DESC - dongle.BASE + 18] = dongle.STOCK_DESC
-STOCK = bytes(STOCK)
-XBOX = bytearray(STOCK)
-XBOX[dongle.DESC - dongle.BASE:dongle.DESC - dongle.BASE + 18] = dongle.XBOX_DESC
-XBOX = bytes(XBOX)
-K = dict(stock_sha256=hashlib.sha256(STOCK).hexdigest(), xbox360_sha256=hashlib.sha256(XBOX).hexdigest())
+
+
+def made(bank: bytes, *keys) -> bytes:
+    """bank with each tweak's regions as 8BitDo has them, or as the tweak makes them for keys."""
+    out = bytearray(bank)
+    for key, (_, edits) in dongle.TWEAKS.items():
+        for a, old, new in edits:
+            out[a - dongle.BASE:a - dongle.BASE + len(old)] = new if key in keys else old
+    return bytes(out)
+
+
+STOCK = made(rnd.randbytes(dongle.SIZE))
+XBOX, DINPUT, BOTH = made(STOCK, "dongle_360"), made(STOCK, "dongle_dinput"), made(STOCK, "dongle_360", "dongle_dinput")
+K = dict(stock_sha256=hashlib.sha256(STOCK).hexdigest())
 
 
 def flash(bank_a: bytes, version: int = 0x67) -> bytes:
@@ -26,13 +33,37 @@ def flash(bank_a: bytes, version: int = 0x67) -> bytes:
 
 class DongleFirmwareTest(unittest.TestCase):
     def test_original_firmware(self):
-        self.assertEqual(dongle.read_firmware(SimApp(flash(STOCK)), **K), dongle.DongleFirmware(True, 1.03, False))
+        self.assertEqual(dongle.read_firmware(SimApp(flash(STOCK)), **K), dongle.DongleFirmware(True, 1.03, ()))
 
     def test_xbox_360_tweak(self):
-        self.assertEqual(dongle.read_firmware(SimApp(flash(XBOX)), **K), dongle.DongleFirmware(True, 1.03, True))
+        self.assertEqual(dongle.read_firmware(SimApp(flash(XBOX)), **K), dongle.DongleFirmware(True, 1.03, ("dongle_360",)))
+
+    def test_d_input_tweak_alone_and_with_the_xbox_360_one(self):
+        self.assertEqual(dongle.read_firmware(SimApp(flash(DINPUT)), **K), dongle.DongleFirmware(True, 1.03, ("dongle_dinput",)))
+        self.assertEqual(dongle.read_firmware(SimApp(flash(BOTH)), **K), dongle.DongleFirmware(True, 1.03, ("dongle_360", "dongle_dinput")))
+
+    def test_a_tweak_found_only_in_part_is_unknown(self):
+        hook = dongle.TWEAKS["dongle_dinput"][1][0]
+        part = bytearray(STOCK); part[hook[0] - dongle.BASE:hook[0] - dongle.BASE + 4] = hook[2]   # the call without its code
+        self.assertEqual(dongle.state(bytes(part), **K), (False, ()))
+        other = bytearray(XBOX); other[100] ^= 1   # a byte no tweak touches
+        self.assertEqual(dongle.state(bytes(other), **K), (False, ()))
+
+    def test_the_link_up_call_goes_to_link_mode_after_the_image(self):
+        def bl(run, code):   # a TC32 bl: Thumb's with the top nibble 9 instead of f
+            hi, lo = int.from_bytes(code[:2], "little"), int.from_bytes(code[2:], "little")
+            self.assertEqual((hi >> 11, lo >> 11), (0x12, 0x13))
+            off = (hi & 0x7FF) << 12 | (lo & 0x7FF) << 1
+            return run + 4 + off - (off & 0x400000) * 2
+        (call, stock, new), (code, blank, blob) = dongle.TWEAKS["dongle_dinput"][1]
+        self.assertEqual(bl(call - dongle.BASE, stock), 0xDE28)   # RAM code runs at image - 0x6000: was init_usb_xinput
+        self.assertEqual(bl(call - dongle.BASE, new), code)
+        self.assertTrue(0xFF44 <= code and code + len(blob) <= dongle.END and blank == bytes(len(blob)) and code % 4 == 0)
+        calls = [bl(code + i, blob[i:i + 4]) for i in range(0, len(blob) - 3, 2) if blob[i + 1] >> 3 == 0x12 and blob[i + 3] >> 3 == 0x13]
+        self.assertEqual(sorted(calls), [0xDC9C, 0xDDF8, 0xDE28])   # dongle.s assembled for this address: re-enumerate, idle, X-input
 
     def test_other_firmware_gives_the_version_of_its_record(self):
-        self.assertEqual(dongle.read_firmware(SimApp(flash(rnd.randbytes(dongle.SIZE), 0x68)), **K), dongle.DongleFirmware(False, 1.04, False))
+        self.assertEqual(dongle.read_firmware(SimApp(flash(rnd.randbytes(dongle.SIZE), 0x68)), **K), dongle.DongleFirmware(False, 1.04, ()))
 
     def test_a_dongle_that_stops_answering_is_an_error(self):
         class Silent:
@@ -42,8 +73,8 @@ class DongleFirmwareTest(unittest.TestCase):
             dongle.read_firmware(Silent(), **K)
         self.assertIn("dongle", str(e.exception))
 
-    def test_the_real_hashes_are_set(self):
-        self.assertEqual((len(dongle.STOCK_SHA256), len(dongle.XBOX360_SHA256)), (64, 64))
+    def test_the_real_hash_is_set(self):
+        self.assertEqual(len(dongle.STOCK_SHA256), 64)
 
 
 class PairedDongleTest(unittest.TestCase):
@@ -119,8 +150,7 @@ class DongleWriteTest(unittest.TestCase):
         self.full[0:dongle.BOOT_END] = rnd.randbytes(dongle.BOOT_END)
         self.full[dongle.CAL:dongle.CAL + 0x40] = rnd.randbytes(0x40)
         self.full = bytes(self.full)
-        for name, value in (("STOCK_SHA256", K["stock_sha256"]), ("XBOX360_SHA256", K["xbox360_sha256"])):
-            p = mock.patch.object(dongle, name, value); p.start(); self.addCleanup(p.stop)
+        p = mock.patch.object(dongle, "STOCK_SHA256", K["stock_sha256"]); p.start(); self.addCleanup(p.stop)
 
     def test_backup_reads_the_whole_dongle_twice_and_keeps_it(self):
         path = dongle.backup(SimApp(self.full), self.store, lambda *a: None)
@@ -130,11 +160,14 @@ class DongleWriteTest(unittest.TestCase):
         other = bytearray(self.full); other[dongle.CAL] ^= 1
         self.assertEqual(dongle.unit_backups(self.store, dongle.unit_of(bytes(other))), [])   # another dongle's calibration
 
-    def test_target_derives_either_firmware_from_a_known_bank(self):
-        self.assertEqual(dongle.target(STOCK, True), XBOX)
-        self.assertEqual(dongle.target(XBOX, False), STOCK)
+    def test_target_derives_any_firmware_from_a_known_bank(self):
+        self.assertEqual(dongle.target(STOCK, ["dongle_360"]), XBOX)
+        self.assertEqual(dongle.target(XBOX, []), STOCK)
+        self.assertEqual(dongle.target(XBOX, ["dongle_dinput"]), DINPUT)
+        self.assertEqual(dongle.target(STOCK, ["dongle_dinput", "dongle_360"]), BOTH)
+        self.assertEqual(dongle.target(BOTH, ["dongle_360"]), XBOX)
         with self.assertRaises(OpError):
-            dongle.target(rnd.randbytes(dongle.SIZE), True)
+            dongle.target(rnd.randbytes(dongle.SIZE), ["dongle_360"])
 
     def test_installing_enters_update_mode_writes_only_bank_a_and_comes_back(self):
         w = World(self.full)
@@ -158,6 +191,20 @@ class DongleWriteTest(unittest.TestCase):
             dongle.apply(w.find, w.open, bytes(other), XBOX, lambda *a: None, wait=0.01)
         self.assertIn("nothing was written", str(e.exception))
         self.assertEqual(bytes(w.flash), self.full)
+
+    def test_a_staged_update_stops_the_write_before_update_mode_and_in_it(self):
+        record = bytearray(self.full)
+        record[dongle.RECORD + 0x18:dongle.RECORD + 0x1C] = dongle.STAGED_MAGIC
+        record[dongle.RECORD + 0x20:dongle.RECORD + 0x24] = (0xA000).to_bytes(4, "little")
+        for start in ("dongle", "boot"):
+            w = World(bytes(record), start=start)
+            with self.assertRaises(OpError) as e:
+                dongle.apply(w.find, w.open, bytes(record), XBOX, lambda *a: None, wait=0.01)
+            self.assertIn("staged", str(e.exception))
+            self.assertEqual(bytes(w.flash), bytes(record))
+            self.assertEqual(w.mode, start)   # idle: it never entered update mode
+        record[dongle.RECORD + 0x20:dongle.RECORD + 0x24] = bytes(4)   # length 0, as on Carlos's dongle: nothing staged
+        self.assertFalse(dongle.staged(bytes(record[dongle.RECORD:dongle.RECORD + 0x24])))
 
     def test_the_write_never_leaves_bank_a(self):
         with self.assertRaises(AssertionError):
@@ -192,6 +239,32 @@ class DongleCliTest(DongleWriteTest):
         self.assertTrue(said[-1].startswith("Done."), said)
         self.run_cmd(cli.cmd_restore, w, source="stock", write=True)
         self.assertEqual(bytes(w.flash[dongle.BASE:dongle.END]), STOCK)
+
+    def test_both_tweaks_install_together_and_an_unknown_one_is_refused(self):
+        from u2c_customfw import cli
+        w = World(self.full)
+        self.run_cmd(cli.cmd_backup, w)
+        said = self.run_cmd(cli.cmd_patch, w, tweaks="dongle_360,dongle_dinput", write=True)
+        self.assertEqual(bytes(w.flash[dongle.BASE:dongle.END]), BOTH)
+        self.assertIn("This installs firmware 1.03 with Xbox 360 controller over 2.4 GHz and D-input mode with B + Home on the dongle.", said[0])
+        said = self.run_cmd(cli.cmd_backup, w)
+        self.assertIn("The dongle has firmware 1.03 with Xbox 360 controller over 2.4 GHz and D-input mode with B + Home.", said[-1])
+        with self.assertRaises(cli.Exit) as e:
+            self.run_cmd(cli.cmd_patch, w, tweaks="dongle_dinputt", write=True)
+        self.assertEqual(e.exception.msg, "The dongle's tweaks are dongle_360, dongle_dinput. Nothing was written.")
+        self.assertEqual(bytes(w.flash[dongle.BASE:dongle.END]), BOTH)
+
+    def test_check_first_says_an_update_is_staged(self):
+        from u2c_customfw import cli
+        record = bytearray(self.full)
+        record[dongle.RECORD + 0x18:dongle.RECORD + 0x1C] = dongle.STAGED_MAGIC
+        record[dongle.RECORD + 0x20:dongle.RECORD + 0x24] = (0xA000).to_bytes(4, "little")
+        w = World(bytes(record))
+        self.run_cmd(cli.cmd_backup, w)
+        with self.assertRaises(cli.Exit) as e:
+            self.run_cmd(cli.cmd_patch, w, tweaks="dongle_360")   # without --write
+        self.assertIn("staged", e.exception.msg)
+        self.assertEqual(bytes(w.flash), bytes(record))
 
     def test_without_a_backup_nothing_is_written(self):
         from u2c_customfw import cli

@@ -43,11 +43,12 @@ const CONTROLLER = ["cable", "cable_360", "boot"];
 let st = null, fw = null, reading = false, busy = false, base = "backup";
 
 const tweakBoxes = () => [...document.querySelectorAll(".tweak")];
+const dongleBoxes = () => [...document.querySelectorAll(".dongle-tweak")];
 const RING_NAMES = { ring_normal: "normal", ring_25: "25 %", ring_5: "5 %", ring_1: "1 %", ring_0_1: "0.1 %", ring_off: "off" };
-let ringKept = "", dongleRead = null;  // the Home ring level installed, kept by the next install; the Settings tab changes it
+let ringKept = "", dongleRead = null;  // the Home ring level installed, kept by the next install; a level saved from Settings overrides it at power-on
 const RING_CODE_USERS = ["battery_alerts", "settings", "fixes", "stick_precision", "cpu_rest"];
 const needsRingCode = () => tweakBoxes().some((x) => RING_CODE_USERS.includes(x.value) && x.checked);
-const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval"] : t; };  // every install asks for 12.5 ms
+const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval", ...(t.includes("cpu_rest") ? ["battery_log"] : [])] : t; };  // every install asks for 12.5 ms; with Processor rest, it keeps the battery log
 const tweakTitles = () => [...tweakBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent),
   ...(ringKept || needsRingCode() ? [`Home ring: ${RING_NAMES[ringKept || "ring_normal"]}`] : [])];
 
@@ -117,11 +118,12 @@ function render() {
   const isDongleFw = !!fw && fw.device === "dongle", paired = devs.some((d) => d.mode === "dongle_paired");
   const dongleOnly = (!ctrl && devs.some((d) => d.mode.startsWith("dongle"))) || (boot && isDongleFw);   // also a dongle left in update mode
   const dongleReady = dongleOnly && isDongleFw && !paired, dBacked = isDongleFw && fw.backed;
-  const backed = !!st && st.backups.length > 0, off = busy || reading, on109 = !!fw && !!fw.version && fw.version.toFixed(2) === "1.09";
+  const mine = fw && fw.unit_backups ? fw.unit_backups : st ? st.backups : [];   // this controller's backups once it has been read
+  const backed = mine.length > 0, off = busy || reading, on109 = !!fw && !!fw.version && fw.version.toFixed(2) === "1.09";
   const patchable = !!ctrl && backed && tweaks().length > 0 && !(fw && fw.known === false && !on109);
   hero(devs, ctrl, boot);
 
-  $("last-backup").textContent = dongleOnly ? (isDongleFw && fw.restore_backup ? lastBackup([fw.restore_backup.name]) : "") : st ? lastBackup(st.backups) : "";
+  $("last-backup").textContent = dongleOnly ? (isDongleFw && fw.restore_backup ? lastBackup([fw.restore_backup.name]) : "") : lastBackup(mine);
   $("backup-connect").hidden = !!ctrl || dongleOnly;
   document.querySelectorAll("[data-dongle]").forEach((e) => {  // the dongle's own wording where the controller's would be wrong
     if (!("ctrl" in e.dataset)) e.dataset.ctrl = e.textContent;
@@ -133,11 +135,15 @@ function render() {
   pre($("pre-boot"), boot, "In update mode", "Not in update mode");
 
   const xbox = tweakBoxes().find((x) => x.value === "bt_xbox"), rumble = tweakBoxes().find((x) => x.value === "bt_rumble");
+  const long = tweakBoxes().find((x) => x.value === "bt_rumble_long");
   if (!xbox.checked) rumble.checked = false;
-  tweakBoxes().forEach((x) => { x.disabled = busy || (x === rumble && !xbox.checked); x.parentElement.classList.toggle("off", x.disabled); });
+  if (!rumble.checked) long.checked = false;
+  tweakBoxes().forEach((x) => { x.disabled = busy || (x === rumble && !xbox.checked) || (x === long && !rumble.checked); x.parentElement.classList.toggle("off", x.disabled); });
   $("ctrl-tweaks").hidden = $("tweaks-opts").hidden = dongleOnly; $("dongle-tweaks").hidden = !dongleOnly;
-  if (isDongleFw && fw !== dongleRead) { dongleRead = fw; $("dongle-360").checked = $("dongle-360").defaultChecked = fw.tweaks[0].on; }   // each read starts from what's installed
-  $("dongle-360").disabled = busy || !dongleReady; $("dongle-360").closest(".tw").classList.toggle("off", $("dongle-360").disabled);
+  if (isDongleFw && fw !== dongleRead) {   // each read starts from what's installed
+    dongleRead = fw; dongleBoxes().forEach((x) => (x.checked = x.defaultChecked = fw.tweaks.some((t) => t.key === x.value && t.on)));
+  }
+  dongleBoxes().forEach((x) => { x.disabled = busy || !dongleReady; x.closest(".tw").classList.toggle("off", x.disabled); });
   $("dongle-note").hidden = !paired;
   const installWhy = dongleOnly ? (paired ? "Turn the controller off so the dongle is connected on its own." : "") : !tweaks().length ? "Choose at least one tweak." : !fw || fw.known !== false || on109 ? ""
     : fw.version ? "This app only installs tweaks over firmware 1.09." : "This firmware can't be identified. Restore your backup first.";
@@ -145,10 +151,11 @@ function render() {
 
   const dRestore = dongleReady && !!fw.restore_backup, dStock = dongleReady && dBacked && fw.stock_ok;
   const can = dongleOnly ? { backup: !boot, "patch-dry": dongleReady && dBacked, "patch-write": dongleReady && dBacked,
-    "restore-backup-dry": dRestore, "restore-backup": dRestore, "restore-stock-dry": dStock, "restore-stock": dStock, "force-open": false, "report-open": true, refresh: true }
+    "restore-backup-dry": dRestore, "restore-backup": dRestore, "restore-stock-dry": dStock, "restore-stock": dStock, "force-open": false, "report-open": true, "battlog-save": false, refresh: true }
     : { backup: !!ctrl, "patch-dry": patchable, "patch-write": patchable,
     "restore-backup-dry": !!ctrl && !!fw && !!fw.restore_backup, "restore-backup": !!ctrl && !!fw && !!fw.restore_backup, "restore-stock-dry": !!ctrl && backed && on109, "restore-stock": !!ctrl && backed && on109,
-    "force-open": boot && backed /* firmware that can't be identified may not know the command that enters update mode */, "report-open": true, refresh: true };
+    "force-open": boot && backed /* firmware that can't be identified may not know the command that enters update mode */, "report-open": true,
+    "battlog-save": !!ctrl && !boot, refresh: true };
   for (const [id, ok] of Object.entries(can)) $(id).disabled = off || !ok;
   $("backup").classList.toggle("sec", dongleOnly ? dBacked : backed);   // once there's a backup, installing is the main step
   const stockWhy = dongleOnly || !ctrl || !backed || !fw || fw.error || on109 ? "" : fw.version ? `Not available, because this controller has firmware ${fw.version.toFixed(2)}.`
@@ -259,6 +266,7 @@ async function runJob(label, path, body, doneText) {  // doneText: the status wh
   const ok = end.type === "done";
   $("dock").className = "dock " + (ok ? "done" : "err"); $("dock-status").textContent = !ok ? "Not completed" : end.unchanged ? "No changes needed" : doneText;
   $("dock-message").textContent = end.message || ""; $("dock-message").hidden = !end.message; $("idle").hidden = true;
+  $("prog").hidden = $("pc").hidden = !!end.message;   // the message takes the progress bar's place
   if (ok) setPct(100);
   busy = false; refresh();
 }
@@ -367,7 +375,7 @@ function popover(button, ...content) {  // a small pop-up under an (i) button, o
   return hover;  // more places that open it on hover
 }
 document.addEventListener("scroll", () => document.querySelectorAll(".pop:popover-open").forEach((p) => p.hidePopover()), true);
-[...tweakBoxes(), $("dongle-360")].forEach((x) => {  // each explanation sits behind an (i) button next to the name; a caution stays in view
+[...tweakBoxes(), ...dongleBoxes()].forEach((x) => {  // each explanation sits behind an (i) button next to the name; a caution stays in view
   const name = x.parentElement.lastElementChild, b = document.createElement("button");
   b.type = "button"; b.className = "info"; b.textContent = "i"; b.setAttribute("aria-label", `About ${name.firstChild.textContent}`);
   name.insertBefore(b, name.querySelector("small"));
@@ -382,12 +390,13 @@ $("backup").onclick = () => runJob("Backing up…", "/api/backup", null, "Backup
 const onDongle = () => !!fw && fw.device === "dongle";
 const restarts = () => (st && st.devices.some((d) => d.mode === "boot") ? "The app restarts the controller afterwards."
   : "The app restarts the controller into update mode to write it, then restarts it again.");
-const dongleTweaks = () => ($("dongle-360").checked ? ["dongle_360"] : []);
+const dongleTweaks = () => dongleBoxes().filter((x) => x.checked).map((x) => x.value);
 $("patch-dry").onclick = () => runJob("Checking…", "/api/patch", { tweaks: onDongle() ? dongleTweaks() : tweaks(), base, write: false }, "Check passed");
 $("patch-write").onclick = async () => {
   if (onDongle()) {
+    const chosen = dongleBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent);
     if (await ask("Install this on the dongle?", "This changes the dongle's firmware. The app restarts the dongle into update mode to write it, then restarts it again. Installing modified firmware probably voids the dongle's warranty.",
-      [$("dongle-360").checked ? "Xbox 360 controller over 2.4 GHz" : "No tweaks: the original firmware 1.03"], "Install", "install"))
+      chosen.length ? chosen : ["No tweaks: the original firmware 1.03"], "Install", "install"))
       runJob("Installing…", "/api/patch", { tweaks: dongleTweaks(), write: true }, "Installed on the dongle");
     return;
   }
@@ -407,7 +416,7 @@ $("restore-stock").onclick = async () => {
       runJob("Restoring…", "/api/restore", { source: "stock", write: true }, "Original firmware restored");
     return;
   }
-  if (await ask("Restore the original firmware 1.09?", `This replaces the controller's firmware with 8BitDo's original 1.09, downloaded from 8BitDo. ${restarts()} Your settings, pairings and calibration stay as they are.`, [], "Restore", "danger"))
+  if (await ask("Restore the original firmware 1.09?", `This replaces the controller's firmware with 8BitDo's original 1.09, taken from one of your backups or, if none has it, downloaded from 8BitDo. ${restarts()} Your settings, pairings and calibration stay as they are.`, [], "Restore", "danger"))
     runJob("Restoring…", "/api/restore", { source: "stock", write: true }, "Original firmware restored");
 };
 $("force-open").onclick = () => {
@@ -425,6 +434,16 @@ $("report-open").onclick = async () => {
 $("report-copy").onclick = async () => {
   try { await navigator.clipboard.writeText($("report-text").textContent); $("report-copy").textContent = "Copied"; }
   catch (e) { getSelection().selectAllChildren($("report-text")); }  // then ⌘C
+};
+$("battlog-save").onclick = async () => {
+  const out = $("battlog-result");
+  reading = true; render(); out.hidden = false; out.textContent = "Reading the log…";
+  try {
+    const r = await api("POST", "/api/battery-log", {});
+    out.textContent = r.error ? r.error : r.records ? `Saved ${r.summary}, as “${r.name}” in the app's folder.`
+      : "The log is empty. It starts once firmware installed by version 1.1 or later, with Processor rest, runs on battery.";
+  } catch (e) { out.textContent = e.message; }
+  reading = false; render();
 };
 $("report-close").onclick = () => { $("report").close(); $("report-copy").textContent = "Copy"; };
 render(); refresh();

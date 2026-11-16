@@ -137,6 +137,13 @@ class CliTest(unittest.TestCase):
         self.assertNotEqual(code, 2, text)   # 2 would be a usage error
         self.assertEqual([o for o in dev.ops if o[0] != "read"], [])
 
+    def test_restore_stock_takes_1_09_from_a_backup_before_downloading(self):
+        dev = SimBoot(self.flash)
+        with mock.patch.object(cli.fetch, "fetch_stock", side_effect=AssertionError("downloaded")):
+            code, text = run(["restore", "stock", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 0, text)
+        self.assertNotIn("downloaded", text)
+
     def unrecognised(self):  # the same unit, with bank A no longer recognised (an interrupted install, say)
         f = bytearray(self.flash)
         f[image.BASE:image.BASE + 0x1000] = b"\xff" * 0x1000

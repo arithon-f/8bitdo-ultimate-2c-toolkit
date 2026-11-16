@@ -216,3 +216,48 @@ same branch. Writes were made by cable; between them the controller was left as 
    with it again (7 bytes): both restarted the controller into its new firmware.
 6. **Afterwards**, a backup by cable matched the one taken before these writes except the settings record's ring byte
    (`+25`), which holds the level installed and the level saved: normal installed, 5 % saved, as the controller had it.
+
+# Hardware validation of Long rumble over Bluetooth (2026-11-14)
+
+Run on a different Ultimate 2C Wireless controller from the sections above, with Long rumble over Bluetooth (and the Xbox
+and Rumble tweaks it needs) installed by the macOS app built from this branch, connected over Bluetooth to macOS 27.2
+(Apple silicon) and to an Android TV playing a Windows host through Sunshine and Moonlight.
+
+1. **A loop count, from macOS.** `tools/rumble.py 0 50 255 --loops 4` (2.55 s, then four times more), with no stop after
+   it, ran its repeats, where Rumble over Bluetooth alone stops after 2.55 s. The same request with the 4 in the start
+   delay instead (`03 00 00 00 32 ff 04 00`, as `--delay 4` sends it) stopped after 2.55 s (3.0 s, timed by hand): with
+   no loop count, nothing is repeated.
+2. **Android TV.** controllertest.io on the Windows host, while streaming to the TV: a rumble longer than 2.55 s, which
+   stopped after 2.55 s with Rumble over Bluetooth alone, now lasts its full time.
+3. **controllertest.io with the controller on the Mac** gives the full time beyond 2.55 s, as it did before this tweak, so
+   it can't show the difference.
+
+Earlier the same day, with Rumble over Bluetooth only: with the controller on the Mac over Bluetooth, controllertest.io's
+tap test does nothing for anything under about 100 ms, and it works over 2.4 GHz. From `tools/rumble.py`, a lone 50 ms
+request (`100 100 5`) and the longest request with a stop 50 ms later (`--stop-after 50`, as a browser sends a tap) are
+both felt, so the firmware and the Bluetooth link aren't what drops short taps.
+
+Not validated on the controller: a rumble left to run to Android's 652.8 s limit, and the controller's own buzzes and a
+disconnection ending the repeats. `firmware-src/test_longrumble.py` runs them in the interpreter.
+
+# Hardware validation of 1.1 (2026-11-16)
+
+On the Ultimate 2C and the dongle used for 1.0.3, with 1.1.0 beta 1 run from source on macOS 27.2 (Apple silicon), after a
+full backup of each.
+
+1. **Install by cable** of the 1.0 set plus Long rumble over Bluetooth and Faster Bluetooth input (894 bytes, with the
+   battery log): the app entered update mode by itself, wrote and restarted the controller; a second check said it already
+   had this firmware.
+2. **Long rumble over Bluetooth**, with `tools/rumble.py`: 1 s with four repeats lasted about 5 s; the longest request
+   (2.55 s, 255 repeats) followed by a stop 0.5 s later stopped then; turning the Mac's Bluetooth off during a long rumble
+   stopped it at once.
+3. **Faster Bluetooth input:** the controller connected over Bluetooth and worked normally on macOS.
+4. **D-input mode with B + Home** on the dongle (53 bytes, with the Xbox 360 tweak): paired, the dongle came up as
+   `045e:028e` bcdDevice `0x0103`; after turning the controller on with B + Home, as `2dc8:301c` bcdDevice `0x0001`, one
+   HID interface.
+5. **Finding devices** with the new vendor filter: by cable, in update mode, over Bluetooth, the dongle alone and paired.
+6. **Battery log:** nothing is written by cable; on battery, one record a minute, matching the times macOS logged for each
+   Bluetooth connection (1 and 2 minutes; two 2.4 GHz sessions of about 30 s wrote none).
+
+Not tried on hardware: Restore → Original taking 1.09 from a backup, and the message for a dongle with its original
+firmware and the controller on.

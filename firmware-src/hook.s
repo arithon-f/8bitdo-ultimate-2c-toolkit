@@ -65,6 +65,9 @@
 @ and the Bluetooth branch's call to the motor setter at 0xa4ae (was tjl 0xfa68) goes to stall_hook, which still makes it.
 	.section .resthook, "ax"
 	tjl	rest_main_poll
+@ With the battery log (battery_log), the same call goes to log_main_poll (rest.c, in place at 0x9964), which then calls rest_main_poll.
+	.section .loghook, "ax"
+	tjl	log_main_poll
 	.section .hstall, "ax"
 	.ifdef STALL_METER
 	tjl	meter_stall

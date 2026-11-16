@@ -98,6 +98,10 @@ class BackupTest(Base):
         self.assertEqual([x.path for x in bkp.find_backups(self.tmp, f[:0x6000], f[image.MAC_SECTOR:image.MAC_SECTOR + 0x1000])], [b.path])
         other = bytearray(f[image.MAC_SECTOR:image.MAC_SECTOR + 0x1000]); other[3] ^= 1
         self.assertEqual(bkp.find_backups(self.tmp, f[:0x6000], bytes(other)), [])
+        mac = f[image.MAC_SECTOR:image.MAC_SECTOR + 0x1000]   # to show them, the address is enough
+        self.assertEqual([x.path for x in bkp.find_backups(self.tmp, None, mac)], [b.path])
+        self.assertEqual(bkp.find_backups(self.tmp, None, bytes(other)), [])
+        self.assertEqual(bkp.find_backups(self.tmp, b"\0" * 0x6000, mac), [])   # to write one back, the bootloader too
 
 
 class DongleCheckTest(unittest.TestCase):

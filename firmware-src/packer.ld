@@ -29,7 +29,8 @@ SECTIONS
 	.resthook 0xa484 : { *(.resthook) }
 	.hstall 0xa4ae : { *(.hstall) }
 	.hmeter 0xb8e8 : { *(.hmeter) }
-	.battlog 0x9964 : { *(.text.battlog_poll) }
+	.battlog 0x9964 : { *(.text.log_main_poll) *(.text.battlog_poll) }
+	.loghook 0xa484 : { *(.loghook) }
 	.wdog 0x20 : AT(0x6020) { *(.text.rest_main_poll) *(.text.rest_poll) }
 	.stall 0x248c : AT(0x848c) { *(.text.stall_hook) }
 	.sram 0x1210 : AT(0x7210) { *(.text.sram_guard) *(.text.scan_hook) *(.text.trigger) }
@@ -48,6 +49,7 @@ ASSERT(rumble_tail == 0x18400, "rumble_tail is not first in the blank area")
 ASSERT(SIZEOF(.ringtail) <= 0x18ff0 - 0x18400, "the Home ring's code overflows the blank area")
 ASSERT(SIZEOF(.ringhook) == 4 && SIZEOF(.vhooka) == 4 && SIZEOF(.vhookb) == 4 && SIZEOF(.pollhook) == 4 && SIZEOF(.resthook) == 4 && SIZEOF(.hstall) == 4, "a hook isn't one tjl")
 ASSERT(SIZEOF(.battlog) <= 0x9cac - 0x9964, "the battery log outside the dead soft-float subtraction")
+ASSERT(log_main_poll == 0x9964 && SIZEOF(.loghook) == 4, "log_main_poll is not first, or its hook isn't one tjl")
 ASSERT(rest_main_poll == 0x20 && SIZEOF(.wdog) <= 0xb4 - 0x20, "the watchdog outside the dead RAM code at 0x20")
 ASSERT(stall_hook == 0x248c && SIZEOF(.stall) <= 0x2500 - 0x248c, "stall_hook outside the dead RAM code at 0x248c")
 ASSERT(SIZEOF(.hgamea) == 4 && SIZEOF(.hgameb) == 4 && SIZEOF(.hbuzza) == 4 && SIZEOF(.hbuzzb) == 4 && SIZEOF(.hidle) == 4 && SIZEOF(.hstickl) == 4 && SIZEOF(.hstickr) == 4 && SIZEOF(.hscan) == 4, "a settings hook isn't one tjl")

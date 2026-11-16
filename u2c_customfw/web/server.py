@@ -1,9 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """HTTP server bound to 127.0.0.1 on a random port. API calls need the session token in X-Token; the Host header must
 be this address (against DNS rebinding)."""
+import datetime
 import json
 import os
 import secrets
+import subprocess
+import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -11,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from .. import __version__, disclaimer, settings, state, update
 from .. import cli
 from ..firmware import recipes
-from ..ops import backup as bkp, dongle, probe, report as report_mod, shown
+from ..ops import backup as bkp, battlog, dongle, probe, report as report_mod, shown
 from ..ops import settings as settings_ops
 from ..ops.plan import OpError
 from ..protocol import ProtocolError, app
@@ -83,6 +88,32 @@ def make_server(store: Path, port: int = 0):
             self.send(200, json.dumps({"version": __version__, "accepted": state.accepted(store), "devices": found,
                                        "backups": backups,
                                        "disclaimer": disclaimer.text()}))
+
+        def api_battery_log(self):
+            """Read the battery log by cable and save it as CSV in the app's folder, shown in Finder."""
+            if runner.running:
+                return self.send(409, json.dumps({"error": "Another task is running."}))
+            ours = [f for f in cli.find() if f.mode in ("cable", "cable_360")]
+            if len(ours) != 1:
+                return self.send(200, json.dumps({"error": "Connect the controller by cable to save its battery log."}))
+            try:
+                ch = cli.open_channel(ours[0].info, 0x81)
+                try:
+                    probe._check_device(ch, ours[0].mode, None)
+                    rows = battlog.read(ch, ours[0].mode)
+                finally:
+                    ch.close()
+            except PermissionDenied as e:
+                return self.send(200, json.dumps({"error": str(e), "permission": True}))
+            except (OpError, OSError, ProtocolError) as e:
+                return self.send(200, json.dumps({"error": str(e)}))
+            if not rows:
+                return self.send(200, json.dumps({"records": 0}))
+            path = Path(store) / f"battery-log-{datetime.datetime.now():%Y%m%d-%H%M%S}.csv"
+            path.write_text(battlog.csv(rows))
+            if sys.platform == "darwin" and not os.environ.get("U2C_SIM"):
+                subprocess.run(["/usr/bin/open", "-R", str(path)], check=False)
+            return self.send(200, json.dumps({"records": len(rows), "summary": battlog.summary(rows), "name": path.name}))
 
         def api_busy(self):
             """For the Mac app's quit and close guard: the server knows, even when the page has lost track."""
@@ -244,7 +275,8 @@ def make_server(store: Path, port: int = 0):
                 ch = cli.open_channel(f.info, 0 if f.mode == "boot" else 0x81)
                 try:
                     fw = probe.read_firmware(ch, f.mode)
-                    pick = bkp.restorable(cli.unit_backups(ch, store, f.mode))   # what Restore your backup would use
+                    here = cli.unit_backups(ch, store, f.mode, whole=False)   # shown only; writes check the bootloader too
+                    pick = bkp.restorable(here)   # what Restore your backup would use
                 finally:
                     ch.close()
                 st, version = fw.state, fw.version
@@ -257,13 +289,14 @@ def make_server(store: Path, port: int = 0):
             self.send(200, json.dumps({"known": st.known, "recipes": keys, "version": version, "version_from": fw.version_from,
                                        "pending": fw.pending, "boot_identity": fw.boot_identity, "outdated": st.outdated, "ring_level": fw.ring_level,
                                        "restore_backup": pick and {"name": pick.path.name, "taken": bkp.taken(pick.path), "firmware": bkp.describe(pick.state)},
+                                       "unit_backups": sorted(b.path.name for b in here),
                                        "titles": [recipes.RECIPES[k].title for k in keys],
                                        "tweaks": [{"key": k, "title": recipes.RECIPES[k].title, "on": k in keys}
                                                   for k in shown(k for k, r in recipes.RECIPES.items() if not r.group)]
                                                  + [{"key": "ring", "title": ring[0] if ring else "Home ring: normal", "on": bool(ring)}]}))
 
         def dongle_report(self, f, in_boot=False):
-            """The dongle, read-only: its firmware, the one tweak there is for it, and its backups here."""
+            """The dongle, read-only: its firmware, its tweaks, and its backups here."""
             try:
                 ch = cli.open_channel(f.info, 0 if in_boot else 0x81)
                 try:
@@ -276,13 +309,13 @@ def make_server(store: Path, port: int = 0):
             except (OpError, OSError, ProtocolError) as e:
                 return self.send(200, json.dumps({"error": str(e)}))
             usable = [(p, dongle.state(d[dongle.BASE:dongle.END])) for p, d in found]
-            pick = next(((p, xbox) for p, (known, xbox) in usable if known), None)
+            pick = next(((p, tweaks) for p, (known, tweaks) in usable if known), None)
             self.send(200, json.dumps({"device": "dongle", "paired": f.mode == "dongle_paired", "boot": in_boot, "backed": bool(found),
                                        "restore_backup": pick and {"name": pick[0].name, "taken": bkp.taken(pick[0]),
-                                                                   "firmware": f"firmware 1.03 with {dongle.TITLE}" if pick[1] else "the original firmware 1.03"},
+                                                                   "firmware": dongle.describe(pick[1])},
                                        "stock_ok": fw.known or pick is not None,
                                        "known": fw.known, "version": fw.version,
-                                       "tweaks": [{"key": "dongle_360", "title": "Xbox 360 controller over 2.4 GHz", "on": fw.xbox360}]}))
+                                       "tweaks": [{"key": k, "title": title, "on": k in fw.tweaks} for k, (title, _) in dongle.TWEAKS.items()]}))
 
         def api_events(self):
             if not self.auth():
@@ -324,6 +357,8 @@ def make_server(store: Path, port: int = 0):
                 return self.api_ring(req)
             if route == "/api/settings":
                 return self.api_settings(req)
+            if route == "/api/battery-log":
+                return self.api_battery_log()
             if route == "/api/report":
                 return self.send(200, json.dumps({"text": report_mod.report(cli.find(), None, report_mod.log_tail(store), report_mod.clean_extras(req))}))
             if route in ("/api/patch", "/api/restore") and not state.accepted(store):
@@ -340,11 +375,24 @@ def make_server(store: Path, port: int = 0):
                 return self.send(409, json.dumps({"error": "Another task is running."}))
             self.send(202, json.dumps({"started": params[0]}))
 
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler), token
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    httpd.runner = runner
+    return httpd, token
 
 
 def serve(store: Path, port: int = 0) -> None:
     httpd, token = make_server(store, port)
     page = os.environ.get("U2C_PAGE_QUERY", "") if os.environ.get("U2C_SIM") else ""   # macos/preview.sh: the page simulator, never with real devices
     print(f"U2C_URL http://127.0.0.1:{httpd.server_address[1]}/?token={token}{page}", flush=True)
+    if os.environ.get("U2C_EXIT_ON_EOF"):   # started by the Mac app, which holds our stdin open while it lives
+        threading.Thread(target=exit_when_orphaned, args=(httpd.runner,), daemon=True).start()
     httpd.serve_forever()
+
+
+def exit_when_orphaned(runner, stdin=None, wait: float = 1.0, exit=os._exit) -> None:
+    """When the app's end of stdin closes, however the app ended, exit; but a task, a write above all, runs to its end."""
+    for _ in stdin or sys.stdin:
+        pass
+    while runner.running:
+        time.sleep(wait)
+    exit(0)

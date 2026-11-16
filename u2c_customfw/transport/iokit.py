@@ -23,8 +23,12 @@ for f, res, args in [
     (cf.CFSetGetValues, None, [P, P]),
     (cf.CFRunLoopGetCurrent, P, []),
     (cf.CFRunLoopRunInMode, I32, [P, C.c_double, C.c_bool]),
+    (cf.CFNumberCreate, P, [P, L, P]),
+    (cf.CFDictionaryCreate, P, [P, P, P, L, P, P]),
+    (cf.CFArrayCreate, P, [P, P, L, P]),
     (iok.IOHIDManagerCreate, P, [P, C.c_uint32]),
     (iok.IOHIDManagerSetDeviceMatching, None, [P, P]),
+    (iok.IOHIDManagerSetDeviceMatchingMultiple, None, [P, P]),
     (iok.IOHIDManagerOpen, I32, [P, C.c_uint32]),
     (iok.IOHIDManagerClose, I32, [P, C.c_uint32]),
     (cf.CFRelease, None, [P]),
@@ -80,9 +84,31 @@ def _prop(dev, key):
         return buf.value.decode(errors="replace")
 
 
+VENDORS = (0x2DC8, 0x045E)   # 8BitDo, and Microsoft for the Xbox identities: every mode in ops/devices.py
+
+
+def _vendor_matching():
+    """A CFArray of {VendorID: v} dictionaries, made once and never released, so a listing opens only these vendors'
+    devices instead of every HID device on the Mac."""
+    key = _cfstr("VendorID")
+    dicts = []
+    for v in VENDORS:
+        n = C.c_int32(v)
+        num = cf.CFNumberCreate(None, 3, C.byref(n))   # kCFNumberSInt32Type
+        keys, values = (P * 1)(key), (P * 1)(num)
+        dicts.append(cf.CFDictionaryCreate(None, keys, values, 1, C.addressof(_DICT_KEYS), C.addressof(_DICT_VALUES)))
+    return cf.CFArrayCreate(None, (P * len(dicts))(*dicts), len(dicts), C.addressof(_ARRAY_CB))
+
+
+_DICT_KEYS = C.c_byte.in_dll(cf, "kCFTypeDictionaryKeyCallBacks")
+_DICT_VALUES = C.c_byte.in_dll(cf, "kCFTypeDictionaryValueCallBacks")
+_ARRAY_CB = C.c_byte.in_dll(cf, "kCFTypeArrayCallBacks")
+_MATCHING = _vendor_matching()
+
+
 def list_devices():
     mgr = iok.IOHIDManagerCreate(None, 0)
-    iok.IOHIDManagerSetDeviceMatching(mgr, None)  # every HID device
+    iok.IOHIDManagerSetDeviceMatchingMultiple(mgr, _MATCHING)
     iok.IOHIDManagerOpen(mgr, 0)
     _managers.append(mgr)
     _release_old(_managers, _open_channels, KEEP_MANAGERS, _release_manager)

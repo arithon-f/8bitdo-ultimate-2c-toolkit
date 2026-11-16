@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The 2.4 GHz dongle: read its firmware, back it up, and write its bank A with the Xbox 360 change or without it.
+"""The 2.4 GHz dongle: read its firmware, back it up, and write its bank A with any of its tweaks.
 
 Reads are the controller's `81 05 05` (protocol/app.py), idle (2dc8:301c) or paired. A write follows the stream proven on
 this dongle (docs, dongle-analysis): `81 05 00 51 00` on the idle dongle, which restarts it into its bootloader
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .. import protocol
+from ..firmware.recipes import BLOBS
 from ..protocol import app, boot
 from .plan import OpError
 from .probe import parse_version
@@ -23,19 +24,25 @@ END = BASE + SIZE
 FLASH, BOOT_END, CAL = 0x20000, 0x6000, 0x1E000   # the whole part, the bootloader, a few unit-specific calibration bytes
 RECORD = 0x12000              # the update record; the version times 100 at +0x0c
 STOCK_SHA256 = "15caaa7c705629c768dc7c22417abf047cb06b499376c5c8b8fe14c0f606028c"     # 8BitDo's v1.03
-XBOX360_SHA256 = "3c09da195ae59a7dee63c54621b64afca5fa5dfe131989d655f1acb284c6cbd5"   # v1.03 presenting as a wired Xbox 360 pad, bcdDevice 0x0103
 CHUNK = 46                    # the largest read the dongle answers
-DESC = 0xF1A0                 # the X-input device descriptor: the only bytes the Xbox 360 change touches
-STOCK_DESC = bytes.fromhex("12 01 00 02 00 00 00 08 c8 2d 0a 31 14 01 01 02 03 01")
-XBOX_DESC = bytes.fromhex("12 01 00 02 ff ff ff 08 5e 04 8e 02 03 01 01 02 03 01")   # 045e:028e, class ff, bcdDevice 0x0103
-TITLE = "Xbox 360 controller over 2.4 GHz"
+DINPUT = (BLOBS / "dinput.bin").read_bytes()   # link_mode, firmware-src/dongle.s
+TWEAKS = {  # key: (title, edits as (address, 8BitDo's bytes, the tweak's bytes))
+    "dongle_360": ("Xbox 360 controller over 2.4 GHz", (
+        (0xF1A0, bytes.fromhex("12 01 00 02 00 00 00 08 c8 2d 0a 31 14 01 01 02 03 01"),   # the X-input device descriptor,
+         bytes.fromhex("12 01 00 02 ff ff ff 08 5e 04 8e 02 03 01 01 02 03 01")),          # as 045e:028e, class ff, bcdDevice 0x0103
+    )),
+    "dongle_dinput": ("D-input mode with B + Home", (
+        (0x6940, bytes.fromhex("0d 90 72 9a"), bytes.fromhex("0f 90 02 9b")),   # at link-up (RAM code, run at 0x940): bl 0xde28 -> bl 0xff48
+        (0xFF48, bytes(len(DINPUT)), DINPUT),                                   # link_mode, in the zeros after the image
+    )),
+}
 
 
 @dataclass
 class DongleFirmware:
     known: bool
     version: float | None
-    xbox360: bool
+    tweaks: tuple[str, ...]
 
 
 def _read(ch, addr: int, n: int, progress=None) -> bytes:
@@ -50,19 +57,33 @@ def _read(ch, addr: int, n: int, progress=None) -> bytes:
     return bytes(out)
 
 
-def state(bank: bytes, stock_sha256: str | None = None, xbox360_sha256: str | None = None) -> tuple[bool, bool]:
-    """(known, with the Xbox 360 change) for a bank A, by hash."""
-    h = hashlib.sha256(bank).hexdigest()
-    return h in (stock_sha256 or STOCK_SHA256, xbox360_sha256 or XBOX360_SHA256), h == (xbox360_sha256 or XBOX360_SHA256)
+def state(bank: bytes, stock_sha256: str | None = None) -> tuple[bool, tuple[str, ...]]:
+    """(known, its tweaks) for a bank A: 8BitDo's v1.03 by hash once each tweak found whole is undone. A tweak found only
+    in part makes it unknown."""
+    base, on = bytearray(bank), []
+    for key, (_, edits) in TWEAKS.items():
+        held = [bank[a - BASE:a - BASE + len(new)] for a, _, new in edits]
+        if held == [new for _, _, new in edits]:
+            on.append(key)
+            for a, old, _ in edits:
+                base[a - BASE:a - BASE + len(old)] = old
+        elif held != [old for _, old, _ in edits]:
+            return False, ()
+    known = hashlib.sha256(base).hexdigest() == (stock_sha256 or STOCK_SHA256)
+    return known, tuple(on) if known else ()
 
 
-def read_firmware(ch, stock_sha256: str | None = None, xbox360_sha256: str | None = None, in_boot: bool = False) -> DongleFirmware:
-    """v1.03 as 8BitDo ships it or with the Xbox 360 change, by hash; otherwise the version its update record gives.
+def describe(tweaks) -> str:
+    return f"firmware 1.03 with {' and '.join(t for k, (t, _) in TWEAKS.items() if k in tweaks)}" if tweaks else "the original firmware 1.03"
+
+
+def read_firmware(ch, stock_sha256: str | None = None, in_boot: bool = False) -> DongleFirmware:
+    """v1.03 as 8BitDo ships it or with tweaks, by hash; otherwise the version its update record gives.
     in_boot: ch is the bootloader's channel, for a dongle left in update mode."""
     read = (lambda a, n: boot.read(ch, a, n)) if in_boot else (lambda a, n: _read(ch, a, n))
     try:
-        known, xbox = state(read(BASE, SIZE), stock_sha256, xbox360_sha256)
-        return DongleFirmware(True, 1.03, xbox) if known else DongleFirmware(False, parse_version(read(RECORD, 16)), False)
+        known, tweaks = state(read(BASE, SIZE), stock_sha256)
+        return DongleFirmware(True, 1.03, tweaks) if known else DongleFirmware(False, parse_version(read(RECORD, 16)), ())
     except protocol.ProtocolError as e:
         raise OpError(str(e)) from e
 
@@ -107,14 +128,16 @@ def unit_backups(store: Path, unit: bytes) -> list[tuple[Path, bytes]]:
     return out
 
 
-def target(bank: bytes, xbox: bool) -> bytes:
-    """Bank A with or without the Xbox 360 change, made from a bank the app recognises and checked by hash."""
+def target(bank: bytes, tweaks) -> bytes:
+    """Bank A with exactly these tweaks, made from a bank the app recognises and checked by hash."""
     if not state(bank)[0]:
         raise OpError("This backup's dongle firmware isn't one the app recognises, so the new firmware can't be made from it. Nothing was written.")
     new = bytearray(bank)
-    new[DESC - BASE:DESC - BASE + len(XBOX_DESC)] = XBOX_DESC if xbox else STOCK_DESC
+    for key, (_, edits) in TWEAKS.items():
+        for a, old, tweak in edits:
+            new[a - BASE:a - BASE + len(old)] = tweak if key in tweaks else old
     new = bytes(new)
-    if state(new) != (True, xbox):
+    if state(new) != (True, tuple(k for k in TWEAKS if k in tweaks)):
         raise OpError("The new dongle firmware doesn't match its known checksum. Nothing was written.")
     return new
 
@@ -134,6 +157,17 @@ def _wait(find, mode, seconds, step):
     return None
 
 
+STAGED_MAGIC = (0xAEB14D6C).to_bytes(4, "little")
+STAGED = ("An update is staged on this dongle, and its update-mode code would install it over the new firmware the next "
+          "time it starts. Nothing was written. Unplug the dongle and plug it back in once, then try again.")
+
+
+def staged(record: bytes) -> bool:
+    """The bootloader's own test before it applies a staged update (0xd44): the magic at +0x18 and a length of 1 to
+    0x3efff at +0x20. Writing bank A then would be undone at the next start."""
+    return record[0x18:0x1C] == STAGED_MAGIC and 1 <= int.from_bytes(record[0x20:0x24], "little") <= 0x3EFFF
+
+
 INTERRUPTED = "The dongle may stay in update mode until it's finished. Use Restore to install your backup or 8BitDo's original firmware 1.03."
 
 
@@ -150,6 +184,8 @@ def apply(find, open_channel, unit_backup: bytes, bank: bytes, progress, wait: f
         try:
             if read_unit(ch) != unit_of(unit_backup):
                 raise OpError("This dongle doesn't match the backup, so nothing was written.")
+            if staged(_read(ch, RECORD, 0x24)):
+                raise OpError(STAGED)
             ch.xfer(bytes([0x81, 0x05, 0x00, 0x51, 0x00]).ljust(64, b"\0"), 0.5)
         finally:
             ch.close()
@@ -163,6 +199,8 @@ def apply(find, open_channel, unit_backup: bytes, bank: bytes, progress, wait: f
                 raise OpError("The device in update mode isn't the dongle, so nothing was written.")
             if boot.read(ch, 0, BOOT_END) != unit_backup[:BOOT_END] or boot.read(ch, CAL, 0x40) != unit_backup[CAL:CAL + 0x40]:
                 raise OpError("The dongle in update mode doesn't match the backup, so nothing was written.")
+            if staged(boot.read(ch, RECORD, 0x24)):
+                raise OpError(STAGED)
         except protocol.ProtocolError as e:
             raise OpError(f"{e}. Nothing was written.") from e
         try:

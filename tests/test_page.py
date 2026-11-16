@@ -63,6 +63,7 @@ class Tree(HTMLParser):
 
 class Server:
     def __init__(self, sim):
+        self.pages = {}
         self.store = tempfile.mkdtemp()
         state.accept(Path(self.store))
         env = dict(os.environ, U2C_SIM=sim, PYTHONPATH=str(Path(__file__).parent.parent))
@@ -71,8 +72,14 @@ class Server:
         self.url = line.split()[1]
 
     def dom(self, query="", budget=4000):
+        """The page as Chrome leaves it. A page that only loads is the same every time on one server, so it's kept;
+        those that click (scenario=, job=) always run, as they may change what the server holds."""
+        key = (query, budget)
+        if "scenario=" not in query and "job=" not in query and key in self.pages:
+            return Tree(self.pages[key]).root
         out = subprocess.run([CHROME, "--headless=new", "--disable-gpu", f"--user-data-dir={self.store}/chrome", f"--virtual-time-budget={budget}",
                               "--dump-dom", self.url + query], capture_output=True, text=True, timeout=120)
+        self.pages[key] = out.stdout
         return Tree(out.stdout).root
 
     def stop(self):
@@ -130,13 +137,14 @@ class TabsTest(PageCase):
         dom = self.server.dom(query)
         return dom, dom.find("fw-title").all_text(), dom.find("fw-note").all_text()
 
-    def test_the_dongle_shows_its_firmware_and_its_one_tweak(self):
+    def test_the_dongle_shows_its_firmware_and_its_tweaks(self):
         dom, title, note = self.hero("&diagsim=dongle")
         self.assertEqual((title, note), ("Dongle firmware 1.03 with tweaks", "Connected on its own."))
-        self.assertEqual([" ".join(n.text) for n in dom.find("chips").children], ["Xbox 360 controller over 2.4 GHz"])
+        self.assertEqual([" ".join(n.text) for n in dom.find("chips").children], ["Xbox 360 controller over 2.4 GHz", "D-input mode with B + Home"])
         self.assertIn("hidden", dom.find("ctrl-tweaks").attrs)
         self.assertNotIn("hidden", dom.find("dongle-tweaks").attrs)
         self.assertEqual({k: k in dom.find("dongle-360").attrs for k in ("checked", "disabled")}, {"checked": True, "disabled": False})
+        self.assertEqual({k: k in dom.find("dongle-dinput").attrs for k in ("checked", "disabled")}, {"checked": False, "disabled": False})
         for id_ in ("backup", "patch-dry", "patch-write", "restore-backup", "restore-stock"):
             self.assertNotIn("disabled", dom.find(id_).attrs, id_)
         self.assertIn("hidden", dom.find("pre-boot").attrs)   # the app puts the dongle in update mode itself
@@ -362,7 +370,7 @@ class SettingsTabTest(PageCase):
 
     def test_installing_includes_settings_by_default_with_the_ring_code(self):
         dom = self.server.dom("&diagsim=boot&scenario=installed")
-        self.assertEqual(dom.find("diag-snap").all_text(), "bt_xbox,bt_rumble,cable_360,dim_leds,battery_alerts,settings,fixes,cpu_rest,ring_normal,ble_interval")
+        self.assertEqual(dom.find("diag-snap").all_text(), "bt_xbox,bt_rumble,cable_360,dim_leds,battery_alerts,settings,fixes,cpu_rest,ring_normal,ble_interval,battery_log")
 
     def test_sticks_and_triggers_have_their_controls(self):
         dom = self.server.dom(self.READY)
@@ -620,7 +628,7 @@ class ControllerTestCard(PageCase):
 
     def test_original_firmware_keeps_the_suggested_tweaks(self):
         dom, _, _ = self.body("boot&scenario=installed")
-        self.assertEqual(dom.find("diag-snap").all_text(), "bt_xbox,bt_rumble,cable_360,dim_leds,battery_alerts,settings,fixes,cpu_rest,ring_normal,ble_interval")
+        self.assertEqual(dom.find("diag-snap").all_text(), "bt_xbox,bt_rumble,cable_360,dim_leds,battery_alerts,settings,fixes,cpu_rest,ring_normal,ble_interval,battery_log")
 
     def ring_button(self, dom, index):
         return next(n for n in dom.find("ring-card").walk() if n.attrs.get("data-live") == str(index))
@@ -771,7 +779,7 @@ class ConfirmTest(PageCase):
     def test_each_tweak_says_what_it_does_and_the_chips_keep_its_name(self):
         dom = self.server.dom("&diagsim=boot&scenario=installask")
         rows = [n for n in dom.find("ctrl-tweaks").walk() if "tw" in n.classes()]
-        self.assertEqual(len(rows), 10)
+        self.assertEqual(len(rows), 12)
         pops = {n.attrs["id"]: n for n in dom.walk() if "pop" in n.classes()}
         for row in rows:   # each explanation is in a pop-up behind its (i) button, outside the row
             info = next(n for n in row.walk() if "info" in n.classes())
@@ -781,7 +789,8 @@ class ConfirmTest(PageCase):
             self.assertFalse(any(n.tag == "small" for n in row.walk()), row.all_text())
         notes = {next(n for n in row.walk() if n.tag == "input").attrs["value"]: next((n.all_text() for n in row.walk() if "note" in n.classes()), None) for row in rows}
         self.assertEqual(notes["bt_rumble"], "Needs Xbox Series X|S controller over Bluetooth.")
-        self.assertEqual(sum(1 for v in notes.values() if v), 3)   # Rumble, Finer stick movement, Faster button reading
+        self.assertEqual(notes["bt_rumble_long"], "Needs Rumble over Bluetooth.")
+        self.assertEqual(sum(1 for v in notes.values() if v), 5)   # Rumble, Long rumble, Finer stick movement, Faster button reading, Faster Bluetooth input
         self.assertFalse(any("data-ring" in n.attrs for n in dom.find("tab-firmware").walk()))   # the ring is set in Settings only
         chips = [" ".join(n.text) for n in dom.find("confirm-chips").children]
         self.assertIn("Rumble over Bluetooth", chips)
@@ -894,14 +903,15 @@ class HelpTest(PageCase):
         self.assertNotIn("about 1 ms", text)
         self.assertIn("Backups are kept on this Mac, in ~/Library/Application Support/u2c-customfw.", text)
         self.assertEqual(text.count("It needs the Home ring's code."), 3)   # Battery alerts, Controller settings and Fixes
-        order = [text.rindex(t + ".") for t in ("Xbox Series X|S controller over Bluetooth", "Rumble over Bluetooth", "Xbox 360 controller over cable", "Dimmer LEDs",
-                                              "Battery alerts", "Controller settings", "Fixes", "Processor rest", "Finer stick movement", "Faster button reading")]
+        order = [text.rindex(t + ".") for t in ("Xbox Series X|S controller over Bluetooth", "Rumble over Bluetooth", "Long rumble over Bluetooth", "Xbox 360 controller over cable", "Dimmer LEDs",
+                                              "Battery alerts", "Controller settings", "Fixes", "Processor rest", "Finer stick movement", "Faster button reading",
+                                              "Faster Bluetooth input")]
         self.assertEqual(order, sorted(order))
 
     def test_the_hero_lists_the_tweaks_in_the_toggles_order(self):
         dom = self.server.dom()
         chips = [" ".join(n.text) for n in dom.find("chips").children]
-        self.assertEqual(chips[:3], ["Xbox Series X|S controller over Bluetooth", "Rumble over Bluetooth", "Xbox 360 controller over cable"])
+        self.assertEqual(chips[:4], ["Xbox Series X|S controller over Bluetooth", "Rumble over Bluetooth", "Long rumble over Bluetooth", "Xbox 360 controller over cable"])
         self.assertLess(chips.index("Processor rest between radio events"), chips.index("Finer stick movement"))
         self.assertTrue(chips[-1].startswith("Home ring"))
     def test_help_opens_at_the_top_with_its_contents(self):

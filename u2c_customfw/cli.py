@@ -60,7 +60,7 @@ def pick(modes=CONTROLLER_MODES):
         raise Exit(2, "More than one device is connected. Unplug all but one controller.")
     if not present or present[0].mode not in modes:
         if present and present[0].mode.startswith("dongle"):
-            raise Exit(2, "That is the 2.4 GHz dongle, and this only works with the controller.")
+            raise Exit(2, "That is the 2.4 GHz dongle, and this command only works with the controller.")
         want = "by cable" if "cable" in modes else "in update mode. " + BOOT_HELP
         raise Exit(2, f"No controller found {want}")
     return present[0]
@@ -106,8 +106,8 @@ def _dongle_in_boot(f) -> bool:
         ch.close()
 
 
-def _dongle_change(args, store, f, xbox: bool | None, source: str | None = None):
-    """Install (xbox: with the Xbox 360 change or not) or restore (source "backup" or "stock") the dongle's bank A."""
+def _dongle_change(args, store, f, tweaks=(), source: str | None = None):
+    """Install (with these tweaks) or restore (source "backup" or "stock") the dongle's bank A."""
     if f.mode == "dongle_paired":
         raise Exit(2, DONGLE_ALONE)
     in_boot = f.mode == "boot"
@@ -116,10 +116,13 @@ def _dongle_change(args, store, f, xbox: bool | None, source: str | None = None)
         unit = dng.read_unit(ch, in_boot)
         try:
             cur = boot.read(ch, dng.BASE, dng.SIZE) if in_boot else dng._read(ch, dng.BASE, dng.SIZE)
+            record = boot.read(ch, dng.RECORD, 0x24) if in_boot else dng._read(ch, dng.RECORD, 0x24)
         except protocol.ProtocolError as e:
             raise OpError(str(e)) from e
     finally:
         ch.close()
+    if dng.staged(record):   # Check First says so too, not only the write
+        raise Exit(2, dng.STAGED)
     found = dng.unit_backups(store, unit)
     if not found:
         raise Exit(2, "There's no backup of this dongle. Back it up first, with the dongle connected on its own.")
@@ -136,8 +139,8 @@ def _dongle_change(args, store, f, xbox: bool | None, source: str | None = None)
         base = cur if dng.state(cur)[0] else next((d[dng.BASE:dng.END] for _, d in found if dng.state(d[dng.BASE:dng.END])[0]), None)
         if base is None:
             raise Exit(2, "Neither the dongle nor its backups hold firmware this app recognises, so nothing was written.")
-        new = dng.target(base, bool(xbox))
-        what = (f"This installs firmware 1.03 with {dng.TITLE} on the dongle." if xbox
+        new = dng.target(base, tweaks)
+        what = (f"This installs {dng.describe(tweaks)} on the dongle." if tweaks
                 else "This installs 8BitDo's original firmware 1.03 on the dongle.")
     if cur == new:
         args.unchanged = True
@@ -163,10 +166,10 @@ def cmd_backup(args, store):
             path = dng.backup(ch, store, args.progress)
         finally:
             ch.close()
-        known, xbox = dng.state(path.read_bytes()[dng.BASE:dng.END])
+        known, tweaks = dng.state(path.read_bytes()[dng.BASE:dng.END])
         get_logger(store).info("backup %s", path.name)
         args.hint(str(path))
-        has = (f"firmware 1.03 with {dng.TITLE}" if xbox else "the original firmware 1.03") if known else "firmware this app doesn't recognise"
+        has = dng.describe(tweaks) if known else "firmware this app doesn't recognise"
         args.say(f"Backup saved as “{path.name}”. The dongle has {has}.")
         return
     ch = open_channel(f.info, 0 if f.mode == "boot" else 0x81)
@@ -186,9 +189,11 @@ def cmd_identify(args, store):
     args.say(("original 1.09" + (f" with tweaks: {', '.join(shown(s.recipes))}" if shown(s.recipes) else "")) if s.known else "unknown firmware")
 
 
-def unit_backups(ch, store, mode="boot"):
-    """The backups of the controller on ch, in update mode or by cable, newest first."""
-    return bkp.find_backups(store, probe._read(ch, mode, 0, image.BOOT_END), probe._read(ch, mode, image.MAC_SECTOR, image.SECTOR))
+def unit_backups(ch, store, mode="boot", whole=True):
+    """The backups of the controller on ch, in update mode or by cable, newest first. whole=False matches by the address
+    sector only, which reads 4 KB instead of 28 KB: for showing them, never for writing."""
+    boot = probe._read(ch, mode, 0, image.BOOT_END) if whole else None
+    return bkp.find_backups(store, boot, probe._read(ch, mode, image.MAC_SECTOR, image.SECTOR))
 
 
 def _backup_for(args, ch, store, recognised=False, mode="boot"):
@@ -301,10 +306,13 @@ def _plan_and_write(args, f, plan, hint, done):
 def cmd_patch(args, store):
     need_accept(args, store)
     f = pick(("boot", "cable", "cable_360", "dongle", "dongle_paired"))
-    if f.mode.startswith("dongle") or _dongle_in_boot(f):
-        return _dongle_change(args, store, f, xbox="dongle_360" in args.tweaks.split(","))
     keys = [k for k in args.tweaks.split(",") if k]
+    if f.mode.startswith("dongle") or _dongle_in_boot(f):
+        if any(k not in dng.TWEAKS for k in keys):
+            raise Exit(2, f"The dongle's tweaks are {', '.join(dng.TWEAKS)}. Nothing was written.")
+        return _dongle_change(args, store, f, keys)
     keys += ["ble_interval"] if keys and "ble_interval" not in keys else []   # as the app: every install asks for 12.5 ms
+    keys += ["battery_log"] if "cpu_rest" in keys and "battery_log" not in keys else []   # and keeps the battery log
     stock = None
 
     def plan(ch, mode):
@@ -319,8 +327,10 @@ def cmd_restore(args, store):
     need_accept(args, store)
     f = pick(("boot", "cable", "cable_360", "dongle", "dongle_paired"))
     if f.mode.startswith("dongle") or _dongle_in_boot(f):
-        return _dongle_change(args, store, f, xbox=None, source=args.source)
-    stock = fetch.fetch_stock() if args.source == "stock" else None   # before update mode: a failed download leaves it as it was
+        return _dongle_change(args, store, f, source=args.source)
+    stock = None
+    if args.source == "stock":   # a backup's checked copy of 1.09 first; else download, before update mode, so a failed
+        stock = bkp.find_original(None, store) or fetch.fetch_stock()   # download leaves the controller as it was
 
     def plan(ch, mode):
         b = _backup_for(args, ch, store, recognised=args.source == "backup", mode=mode)
@@ -352,7 +362,8 @@ def main(argv=None) -> int:
     sub.add_parser("report", parents=[common])
     p = sub.add_parser("identify", parents=[common]); p.add_argument("file")
     p = sub.add_parser("patch", parents=[common])
-    p.add_argument("--tweaks", default="", help="comma list of: " + ", ".join(shown(k for k, r in recipes.RECIPES.items() if not r.earlier_form_of)))
+    p.add_argument("--tweaks", default="", help="comma list of: " + ", ".join(shown(k for k, r in recipes.RECIPES.items() if not r.earlier_form_of))
+                   + "; for the dongle: " + ", ".join(dng.TWEAKS))
     p.add_argument("--backup"); p.add_argument("--download", action="store_true", help="use 8BitDo's v1.09 from its server")
     p = sub.add_parser("restore", parents=[common])
     p.add_argument("source", choices=["backup", "stock"])

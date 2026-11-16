@@ -49,7 +49,8 @@ final class Diagnostics: NSObject, WKScriptMessageHandler {
         }
         sendState()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.sendInput() }
-        batteryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.sendState() }
+        refreshSystemBattery()
+        batteryTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refreshSystemBattery() }
     }
 
     /// Also runs when the app quits, so the Home button never stays captured.
@@ -89,7 +90,7 @@ final class Diagnostics: NSObject, WKScriptMessageHandler {
                                     "extended": pad.extendedGamepad != nil, "localities": localities(pad), "foreground": NSApp.isActive]
         if let battery = pad.battery, battery.batteryState != .unknown || battery.batteryLevel > 0 {
             state["battery"] = ["level": battery.batteryLevel, "state": batteryState(battery)]
-        } else if let name = pad.vendorName, let percent = systemBatteryPercent(of: name) {
+        } else if let name = pad.vendorName, let percent = systemPercent[name] {
             state["battery"] = ["level": Double(percent) / 100, "state": "unknown"]
         }
         sendStateIfChanged(state)
@@ -101,9 +102,26 @@ final class Diagnostics: NSObject, WKScriptMessageHandler {
         deliver(text)
     }
 
+    /// pmset's reading for the current pad, taken off the main thread every 5 s; the state is sent again when it lands.
+    private var systemPercent: [String: Int] = [:]
+    private let pmsetQueue = DispatchQueue(label: "diagnostics.pmset")
+
+    private func refreshSystemBattery() {
+        guard let pad = pad, let name = pad.vendorName else { return sendState() }
+        if let battery = pad.battery, battery.batteryState != .unknown || battery.batteryLevel > 0 { return sendState() }   // GameController knows it
+        pmsetQueue.async { [weak self] in
+            let percent = Self.systemBatteryPercent(of: name)
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.systemPercent[name] = percent
+                self.sendState()
+            }
+        }
+    }
+
     /// GameController may not report the battery of a Bluetooth pad even when macOS knows it. The public power source
     /// API only lists the Mac's own battery, so this reads `pmset`, which lists accessories too.
-    private func systemBatteryPercent(of name: String) -> Int? {
+    private static func systemBatteryPercent(of name: String) -> Int? {
         let process = Process(), pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
         process.arguments = ["-g", "accps"]

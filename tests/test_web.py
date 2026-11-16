@@ -47,6 +47,28 @@ class WebTest(unittest.TestCase):
         self.assertEqual(status, 200)
         return [json.loads(l[6:]) for l in text.splitlines() if l.startswith("data: ")]
 
+    def test_the_battery_log_is_read_by_cable_and_saved_as_csv(self):
+        import struct
+        flash = bytearray(controller_flash())
+        rows = [struct.pack("<BBHHBB", 3, 0xC3, m, 4100 - m, 99, 2) for m in range(1, 181)]   # 3 h on battery, connected
+        flash[0x53000:0x53000 + 8 * len(rows)] = b"".join(rows)
+        info = transport.DeviceInfo(0x045E, 0x028E, 0xFF7A, "USB", "x", None)
+        with mock.patch.object(cli, "find", lambda: [devices.Found(info, "cable_360")]), \
+                mock.patch.object(cli, "open_channel", lambda i, rid: SimApp(bytes(flash))), mock.patch.dict("os.environ", {"U2C_SIM": "1"}):
+            got = json.loads(self.call("POST", "/api/battery-log")[1])
+        self.assertEqual(got["records"], 180)
+        self.assertIn("3.0 hours on battery from 1 power-on", got["summary"])
+        lines = (self.store / got["name"]).read_text().splitlines()
+        self.assertEqual(lines[0], "power_on,minute,mv,percent,connected,rumble,interval_ms")
+        self.assertEqual(lines[1], "3,1,4099,99,1,0,12.48")
+        self.assertEqual(len(lines), 181)
+        blank = controller_flash()   # nothing logged yet
+        with mock.patch.object(cli, "find", lambda: [devices.Found(info, "cable_360")]), \
+                mock.patch.object(cli, "open_channel", lambda i, rid: SimApp(blank)):
+            self.assertEqual(json.loads(self.call("POST", "/api/battery-log")[1]), {"records": 0})
+        with mock.patch.object(cli, "find", lambda: []):
+            self.assertIn("by cable", json.loads(self.call("POST", "/api/battery-log")[1])["error"])
+
     def test_report_endpoint_with_a_bad_body(self):
         with mock.patch.object(cli, "find", lambda: []):
             for body in ({"macos": "x"}, {"boot_identity": "x"}, {"macos": {"name": 5}}):
@@ -98,6 +120,8 @@ class WebTest(unittest.TestCase):
         got = json.loads(self.call("GET", "/api/settings")[1])
         self.assertFalse(got["available"])
         self.assertIn("2.4 GHz dongle", got["note"])
+        got = json.loads(self.call("GET", "/api/firmware")[1])   # a stock dongle with the controller on: what to do
+        self.assertIn("turn the controller off", got["error"])
 
     def test_api_ring_refuses_in_update_mode(self):
         self.assertEqual(self.ring_call({"level": 2}, mode="boot")[0], 409)
@@ -409,7 +433,7 @@ class WebTest(unittest.TestCase):
         self.assertEqual((data["version"], data["version_from"]), (1.09, "update record"))
         self.assertEqual((data["pending"], data["boot_identity"]), (False, None))
         self.assertEqual([(t["key"], t["on"]) for t in data["tweaks"]],
-                         [("bt_xbox", True), ("bt_rumble", False), ("cable_360", True), ("dim_leds", False), ("battery_alerts", False), ("settings", False), ("fixes", False), ("stick_precision", False), ("cpu_rest", False), ("fast_scan", False), ("ring", False)])
+                         [("bt_xbox", True), ("bt_rumble", False), ("bt_rumble_long", False), ("cable_360", True), ("dim_leds", False), ("battery_alerts", False), ("settings", False), ("fixes", False), ("stick_precision", False), ("cpu_rest", False), ("fast_scan", False), ("ble_fast", False), ("ring", False)])
 
     def test_firmware_endpoint_in_update_mode_names_the_backup_restore_uses(self):
         flash = controller_flash()
@@ -448,11 +472,12 @@ class WebTest(unittest.TestCase):
         info = transport.DeviceInfo(0x2DC8, 0x301C, 0xFFA0, "USB", "IDLE", None)
         with mock.patch.object(cli, "find", lambda: [devices.Found(info, "dongle")]), \
                 mock.patch.object(cli, "open_channel", lambda i, rid: SimApp(flash(XBOX))), \
-                mock.patch.object(dongle, "STOCK_SHA256", DK["stock_sha256"]), mock.patch.object(dongle, "XBOX360_SHA256", DK["xbox360_sha256"]):
+                mock.patch.object(dongle, "STOCK_SHA256", DK["stock_sha256"]):
             data = json.loads(self.call("GET", "/api/firmware")[1])
         self.assertEqual(data, {"device": "dongle", "paired": False, "boot": False, "backed": False, "restore_backup": None, "stock_ok": True,
                                 "known": True, "version": 1.03,
-                                "tweaks": [{"key": "dongle_360", "title": "Xbox 360 controller over 2.4 GHz", "on": True}]})
+                                "tweaks": [{"key": "dongle_360", "title": "Xbox 360 controller over 2.4 GHz", "on": True},
+                                           {"key": "dongle_dinput", "title": "D-input mode with B + Home", "on": False}]})
 
     def test_a_dongle_left_in_update_mode_is_named_and_its_backup_offered(self):
         from tests.test_dongle import STOCK, K as DK, flash, World
@@ -462,7 +487,7 @@ class WebTest(unittest.TestCase):
         broken = bytearray(full); broken[dongle.BASE:dongle.END] = b"\xff" * dongle.SIZE
         w = World(bytes(broken), start="boot")
         with mock.patch.object(cli, "find", w.find), mock.patch.object(cli, "open_channel", w.open), \
-                mock.patch.object(dongle, "STOCK_SHA256", DK["stock_sha256"]), mock.patch.object(dongle, "XBOX360_SHA256", DK["xbox360_sha256"]):
+                mock.patch.object(dongle, "STOCK_SHA256", DK["stock_sha256"]):
             data = json.loads(self.call("GET", "/api/firmware")[1])
         self.assertEqual((data["device"], data["boot"], data["known"], data["backed"], data["stock_ok"]), ("dongle", True, False, True, True))
         self.assertEqual(data["restore_backup"]["name"], "dongle-20261108-120000.bin")
@@ -611,3 +636,17 @@ class SimulationStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrphanTest(unittest.TestCase):
+    def test_the_core_exits_once_the_app_is_gone_but_never_during_a_task(self):
+        checks = []
+
+        class Busy:
+            @property
+            def running(self):
+                checks.append(1)
+                return len(checks) < 3   # a task that ends after two more checks
+        exited = []
+        server.exit_when_orphaned(Busy(), stdin=io.StringIO("anything\n"), wait=0, exit=exited.append)
+        self.assertEqual((len(checks), exited), (3, [0]))

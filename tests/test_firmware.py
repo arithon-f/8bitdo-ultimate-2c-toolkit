@@ -302,6 +302,23 @@ class FromEarlierVersionsTest(unittest.TestCase):
         st = recipes.identify(img, **self.k)
         self.assertEqual((st.known, st.recipes), (True, tuple(sorted(self.FOUR + ["cpu_rest"]))))
 
+    def test_the_battery_log_comes_with_cpu_rest_and_1_0s_cpu_rest_is_still_recognised(self):
+        img = recipes.build(self.stock, self.FOUR + ["cpu_rest", "battery_log"], **self.k)
+        at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
+        self.assertEqual(at(0xA484, 4), recipes._blob("loghook.bin"))   # the 100 ms call goes to the log first
+        self.assertEqual(at(0x9964, len(recipes._blob("battlog.bin"))), recipes._blob("battlog.bin"))
+        self.assertEqual(at(0x6020, len(recipes._blob("wdog.bin"))), recipes._blob("wdog.bin"))   # Processor rest's own code as before
+        st = recipes.identify(img, **self.k)
+        self.assertEqual((st.known, st.recipes), (True, tuple(sorted(self.FOUR + ["cpu_rest", "battery_log"]))))
+        old = recipes.build(self.stock, self.FOUR + ["cpu_rest"], **self.k)   # what 1.0 installed
+        self.assertEqual(recipes.identify(old, **self.k).recipes, tuple(sorted(self.FOUR + ["cpu_rest"])))
+        ring_only = recipes.build(self.stock, KEYS + ["ring_5"], **self.k)    # the call as the ring alone has it
+        self.assertEqual(recipes.identify(ring_only, **self.k).recipes, tuple(sorted(KEYS + ["ring_5"])))
+        with self.assertRaises(RecipeError):
+            recipes.build(self.stock, self.FOUR + ["battery_log"], **self.k)
+        from u2c_customfw.ops import shown
+        self.assertNotIn("battery_log", shown(st.recipes))
+
     def test_cpu_rest_needs_a_ring_level(self):
         with self.assertRaises(RecipeError) as e:
             recipes.build(self.stock, ["cpu_rest"], **self.k)
@@ -317,6 +334,47 @@ class FromEarlierVersionsTest(unittest.TestCase):
         img = recipes.build(self.stock, ["ble_interval"], **self.k)
         self.assertEqual(img[0xA0DE - image.BASE:0xA0E6 - image.BASE], bytes.fromhex("0aa00aa100a2c8a3"))  # min 10, max 10, latency 0, timeout 200
         self.assertEqual(recipes.identify(img, **self.k).recipes, ("ble_interval",))
+
+    def test_ble_fast_asks_for_7_5_ms_in_place_of_the_12_5_ms_request(self):
+        img = recipes.build(self.stock, ["ble_interval", "ble_fast"], **self.k)
+        self.assertEqual(img[0xA0DE - image.BASE:0xA0E6 - image.BASE], bytes.fromhex("06a006a100a2c8a3"))  # min 6, max 6, latency 0, timeout 200
+        self.assertEqual(recipes.identify(img, **self.k).recipes, ("ble_fast", "ble_interval"))
+        with self.assertRaises(RecipeError) as e:
+            recipes.build(self.stock, ["ble_fast"], **self.k)
+        self.assertIn("ble_interval", str(e.exception))   # it replaces the request every install makes
+
+    def test_the_app_offers_faster_bluetooth_off_by_default(self):
+        html = (Path(recipes.__file__).parents[1] / "web" / "static" / "index.html").read_text()
+        self.assertIn('value="ble_fast">', html)
+
+    def test_long_rumble_hooks_motor_set_and_puts_its_code_in_the_stock_report_map(self):
+        keys = ["bt_xbox", "bt_rumble", "bt_rumble_long"]
+        img = recipes.build(self.stock, keys, **self.k)
+        at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
+        code = (recipes.BLOBS / "longrumble.bin").read_bytes()
+        start, end = recipes.LONG_RUMBLE_CODE
+        self.assertEqual(at(start, end - start), code.ljust(end - start, b"\0"))   # the map bt_xbox no longer points at
+
+        def target(a):   # where the tjl at a goes: Thumb's bl with each halfword's top nibble F turned into 9
+            hi, lo = int.from_bytes(at(a, 2), "little"), int.from_bytes(at(a + 2, 2), "little")
+            self.assertEqual((hi >> 11, lo >> 11), (0b10010, 0b10011))
+            off = (hi & 0x7FF) << 12 | (lo & 0x7FF) << 1
+            return a + 4 + off - (off & 1 << 22) * 2
+        self.assertEqual(target(0xFA72), start)                       # instead of motor_set's two shifts of the hold: long_hold
+        self.assertTrue(start < target(0xFA88) < start + len(code))   # instead of its read of the hold on a zero-hold call: rearm
+        callback = int.from_bytes(at(0x17764, 4), "little")             # the output report's write callback: long_write
+        self.assertEqual(at(0x17764, 4), (recipes.BLOBS / "lrwrite.bin").read_bytes())
+        self.assertTrue(callback & 1 and start < callback < start + len(code))
+        self.assertEqual(recipes.build(self.stock, keys[:2], **self.k)[0x17764 - image.BASE:0x17768 - image.BASE], (0x18391).to_bytes(4, "little"))
+        self.assertEqual(recipes.identify(img, **self.k).recipes, tuple(sorted(keys)))
+        self.assertEqual(recipes.identify(recipes.build(self.stock, keys[:2], **self.k), **self.k).recipes, ("bt_rumble", "bt_xbox"))
+        with self.assertRaises(RecipeError) as e:
+            recipes.build(self.stock, ["bt_xbox", "bt_rumble_long"], **self.k)
+        self.assertIn("bt_rumble", str(e.exception))
+
+    def test_the_app_offers_long_rumble_off_by_default(self):
+        html = (Path(recipes.__file__).parents[1] / "web" / "static" / "index.html").read_text()
+        self.assertIn('value="bt_rumble_long">', html)
 
     def test_fast_scan_halves_the_scan_period_and_keeps_home_and_turbo_timings(self):
         img = recipes.build(self.stock, ["fast_scan"], **self.k)
