@@ -330,6 +330,35 @@ class FromEarlierVersionsTest(unittest.TestCase):
         html = (Path(recipes.__file__).parents[1] / "web" / "static" / "index.html").read_text()
         self.assertIn('value="ble_fast">', html)
 
+    def test_long_rumble_hooks_motor_set_and_puts_its_code_in_the_stock_report_map(self):
+        keys = ["bt_xbox", "bt_rumble", "bt_rumble_long"]
+        img = recipes.build(self.stock, keys, **self.k)
+        at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
+        code = (recipes.BLOBS / "longrumble.bin").read_bytes()
+        start, end = recipes.LONG_RUMBLE_CODE
+        self.assertEqual(at(start, end - start), code.ljust(end - start, b"\0"))   # the map bt_xbox no longer points at
+
+        def target(a):   # where the tjl at a goes: Thumb's bl with each halfword's top nibble F turned into 9
+            hi, lo = int.from_bytes(at(a, 2), "little"), int.from_bytes(at(a + 2, 2), "little")
+            self.assertEqual((hi >> 11, lo >> 11), (0b10010, 0b10011))
+            off = (hi & 0x7FF) << 12 | (lo & 0x7FF) << 1
+            return a + 4 + off - (off & 1 << 22) * 2
+        self.assertEqual(target(0xFA72), start)                       # instead of motor_set's two shifts of the hold: long_hold
+        self.assertTrue(start < target(0xFA88) < start + len(code))   # instead of its read of the hold on a zero-hold call: rearm
+        callback = int.from_bytes(at(0x17764, 4), "little")             # the output report's write callback: long_write
+        self.assertEqual(at(0x17764, 4), (recipes.BLOBS / "lrwrite.bin").read_bytes())
+        self.assertTrue(callback & 1 and start < callback < start + len(code))
+        self.assertEqual(recipes.build(self.stock, keys[:2], **self.k)[0x17764 - image.BASE:0x17768 - image.BASE], (0x18391).to_bytes(4, "little"))
+        self.assertEqual(recipes.identify(img, **self.k).recipes, tuple(sorted(keys)))
+        self.assertEqual(recipes.identify(recipes.build(self.stock, keys[:2], **self.k), **self.k).recipes, ("bt_rumble", "bt_xbox"))
+        with self.assertRaises(RecipeError) as e:
+            recipes.build(self.stock, ["bt_xbox", "bt_rumble_long"], **self.k)
+        self.assertIn("bt_rumble", str(e.exception))
+
+    def test_the_app_offers_long_rumble_off_by_default(self):
+        html = (Path(recipes.__file__).parents[1] / "web" / "static" / "index.html").read_text()
+        self.assertIn('value="bt_rumble_long">', html)
+
     def test_fast_scan_halves_the_scan_period_and_keeps_home_and_turbo_timings(self):
         img = recipes.build(self.stock, ["fast_scan"], **self.k)
         at = lambda a, n: img[a - image.BASE:a - image.BASE + n]

@@ -26,6 +26,7 @@ RING_CODE = (0x18400, 0x18FF0)                                # blank on stock
 ALERTS_FLAG = 0x18FF0
 SETTINGS_FLAG = 0x18FF1
 REST_FLAG = 0x18FF2
+LONG_RUMBLE_CODE = (0x1734C, 0x173C0)  # the stock Report Map: unused once bt_xbox points the Report Map attribute at its own
 STICK_THRESHOLD = 14  # stock's is 20; noise at rest spans about 25 counts, and 14 lets it through about once every 2 s
 
 
@@ -81,7 +82,7 @@ def _make() -> dict[str, Recipe]:
             Edit(0x18390, _blob("noop.bin"), superseded_by="bt_rumble"),
             Edit(0x177A0, _u32(len(_blob("report-map.bin")))),   # Report Map attribute: length
             Edit(0x177A8, _u32(0x18274)),                        # ... and value pointer
-            Edit(0x17764, _u32(0x18391)),                        # output report write callback (Thumb-style odd)
+            Edit(0x17764, _u32(0x18391), superseded_by="bt_rumble_long"),  # output report write callback (Thumb-style odd)
             Edit(0x173C0, bytes.fromhex("025e04130b0905")),      # PnP ID: USB-IF, 045e:0b13, v0509
             Edit(0x18098, bytes.fromhex("0302")),                # output report reference: ID 3, output
             Edit(0x172C0, bytes.fromhex("c403")),                # GAP appearance: gamepad
@@ -94,6 +95,12 @@ def _make() -> dict[str, Recipe]:
         Recipe("bt_rumble", "Rumble over Bluetooth", ("bt_xbox",), (
             Edit(0x18390, _blob("rumble.bin").ljust(0x70, b"\0"),
                  accepts=(_blob("rumble02.bin").ljust(0x70, b"\0"), _blob("rumble03.bin").ljust(0x70, b"\0"))),
+        )),
+        Recipe("bt_rumble_long", "Long rumble over Bluetooth", ("bt_rumble",), (
+            Edit(LONG_RUMBLE_CODE[0], _blob("longrumble.bin").ljust(LONG_RUMBLE_CODE[1] - LONG_RUMBLE_CODE[0], b"\0")),
+            Edit(0xFA72, _blob("lrhooka.bin")),                  # motor_set: any set with a hold ends the repeats
+            Edit(0xFA88, _blob("lrhookb.bin")),                  # motor_set: once the hold runs out, the next repeat, while connected
+            Edit(0x17764, _blob("lrwrite.bin")),                 # the write callback: long_write, rumble_write and then the repeats
         )),
         Recipe("cable_360", "Xbox 360 controller over cable", (), (
             Edit(0x17994, bytes.fromhex("ffffff")),              # class, subclass, protocol
