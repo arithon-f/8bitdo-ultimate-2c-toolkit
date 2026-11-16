@@ -1,15 +1,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""A simulated Ultimate 2 Wireless for trying the app without one (U2W_SIM=<folder>): a 512 KB flash that answers reads
-the way 1.09 does, with 8BitDo's firmware if its server can be reached, and records every report it is sent."""
+"""A simulated Ultimate 2 Wireless for trying the tool without one (U2W_SIM=<folder>): a 512 KB flash that answers reads
+the way 1.09 does, with 8BitDo's firmware if its server can be reached, that restarts into update mode on
+81 05 00 51 00 and back on the bootloader's command 7, and records every report it is sent."""
 import random
 import time
 
+from u2c_customfw.sim import SimBoot
 from u2c_customfw.transport import DeviceInfo
 
 from . import core
 
 SIZE = 0x80000
 sent = []
+state = {"mode": "app", "flash": None}
+APP = DeviceInfo(core.VENDOR, 0x310B, core.PAGE, "USB", "8BitDo Ultimate 2 Wireless Controller", None, 0x0114)
+BOOT = DeviceInfo(core.VENDOR, 0x3208, 0x8C, "USB", "8BitDo Boot", None, 0x0200)
 
 
 def image(payload: bytes | None) -> bytes:
@@ -28,6 +33,9 @@ class Channel:
 
     def xfer(self, report: bytes, timeout: float = 0.5, accept=None):
         sent.append(bytes(report))
+        if report[:5] == b"\x81\x05\x00\x51\x00":
+            state["mode"] = "boot"
+            return None
         if report[0:3] != b"\x81\x05\x05":
             return None
         n, addr = int.from_bytes(report[6:8], "little"), int.from_bytes(report[14:18], "little")
@@ -39,9 +47,26 @@ class Channel:
         pass
 
 
+class Boot(SimBoot):
+    def __init__(self, flash):
+        super().__init__(flash, identity=0x6012)
+
+    def xfer(self, r, timeout=0.5, accept=None):
+        sent.append(bytes(r))
+        if int.from_bytes(r[1:3], "little") == 7:
+            state["mode"] = "app"
+        return super().xfer(r, timeout, accept)
+
+
+def _flash():
+    if state["flash"] is None:
+        state["flash"] = image(core.official())
+    return state["flash"]
+
+
 def list_devices():
-    return [DeviceInfo(core.VENDOR, 0x310B, core.PAGE, "USB", "8BitDo Ultimate 2 Wireless Controller", None, 0x0114)]
+    return [APP if state["mode"] == "app" else BOOT]
 
 
 def open_channel(dev, report_id):
-    return Channel(image(core.official()), delay=0.0004)
+    return Boot(_flash()) if state["mode"] == "boot" else Channel(_flash(), delay=0.0004)

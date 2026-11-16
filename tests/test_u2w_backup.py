@@ -147,3 +147,85 @@ class OfficialTest(unittest.TestCase):
         dat = bytes(0x1C) + PAYLOAD
         with unittest.mock.patch.object(core, "DAT_SHA256", hashlib.sha256(dat).hexdigest()):
             self.assertEqual(core.official(opener(dat)), PAYLOAD)
+
+
+class UpdateModeTest(unittest.TestCase):
+    """The update-mode check on a simulated controller that restarts into update mode and back."""
+    def setUp(self):
+        from u2c_customfw.protocol import boot
+        from u2w_backup import update_mode
+        self.boot, self.um = boot, update_mode
+        self.dir = Path(tempfile.mkdtemp())
+        self.flash = flash()
+        (self.dir / "backup-20261116-000000.bin").write_bytes(self.flash)
+        sim.sent.clear()
+        sim.state.update(mode="app", flash=self.flash)
+        self.addCleanup(lambda: sim.state.update(mode="app", flash=None))
+        self.lines = []
+
+    def say(self, *words):
+        self.lines.append(" ".join(str(w) for w in words))
+
+    def run_check(self, **kw):
+        self.um.check(sim.list_devices, sim.open_channel, self.dir, self.say, wait=2, **kw)
+
+    def app_reports(self):
+        return [r for r in sim.sent if r[0] == 0x81]
+
+    def boot_cmds(self):
+        return [int.from_bytes(r[1:3], "little") for r in sim.sent if r[0] == 5]
+
+    def test_enters_reads_and_leaves_without_erasing_or_writing(self):
+        trace = io.StringIO()
+        self.run_check(trace=trace)
+        self.assertEqual(self.lines[-1], "done update mode checked")
+        self.assertIn("It identifies as 0x6012", "\n".join(self.lines))
+        self.assertIn("Bootloader read in update mode matches the backup; firmware matches.", "\n".join(self.lines))
+        app = self.app_reports()
+        self.assertEqual([r for r in app if r[:3] != b"\x81\x05\x05"], [self.um.ENTER])
+        cmds = self.boot_cmds()
+        self.assertEqual(set(cmds), {8, 5, 7})
+        self.assertEqual((cmds[0], cmds[-1], cmds.count(7)), (8, 7, 1))
+        self.assertEqual(sim.state["mode"], "app")
+        self.assertEqual(len(trace.getvalue().splitlines()), len(sim.sent))
+
+    def test_another_controller_gets_nothing_but_reads(self):
+        (self.dir / "backup-20261116-000000.bin").write_bytes(b"\0" * 0x5000 + self.flash[0x5000:])
+        with self.assertRaises(core.Stop) as e:
+            self.run_check()
+        self.assertIn("isn't the one in your latest backup", str(e.exception))
+        self.assertTrue(all(r[:3] == b"\x81\x05\x05" for r in sim.sent))
+        self.assertEqual(sim.state["mode"], "app")
+
+    def test_a_bootloader_that_isnt_this_controllers_gets_only_identify(self):
+        class Other(sim.Boot):
+            def __init__(self, f):
+                sim.SimBoot.__init__(self, f, identity=0x301B)
+        with unittest.mock.patch.object(sim, "Boot", Other):
+            with self.assertRaises(core.Stop) as e:
+                self.run_check()
+        self.assertIn("0x301b, not 0x6012", str(e.exception))
+        self.assertIn("leave-update-mode", str(e.exception))
+        self.assertEqual(self.boot_cmds(), [8])
+
+    def test_erase_and_write_are_refused(self):
+        ch = self.um.BootReadsOnly(sim.Boot(self.flash))
+        for r in (self.boot.request(4, 0x5000, 0x1000), self.boot.request(3, 0x5000, 0, b"x" * 46),
+                  self.boot.request(4, 0x0, 0x1000)):
+            with self.assertRaises(core.Stop):
+                ch.xfer(r)
+        self.assertEqual(ch.sent, 0)
+
+    def test_leave_sends_identify_and_restart(self):
+        sim.state["mode"] = "boot"
+        self.um.leave(sim.list_devices, sim.open_channel, self.say)
+        self.assertEqual(self.boot_cmds(), [8, 7])
+        self.assertEqual(sim.state["mode"], "app")
+
+    def test_without_a_backup_nothing_is_sent(self):
+        for p in self.dir.glob("backup-*.bin"):
+            p.unlink()
+        with self.assertRaises(core.Stop) as e:
+            self.run_check()
+        self.assertIn("Make a backup first", str(e.exception))
+        self.assertEqual(sim.sent, [])

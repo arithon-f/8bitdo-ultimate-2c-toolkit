@@ -23,6 +23,23 @@ Before running it, turn the controller off, unplug its 2.4 GHz adapter and conne
 - From the toolkit it uses only the macOS transport, `u2c_customfw/transport/iokit.py`. There, the only call that sends anything to a device is `IOHIDDeviceSetReport`, in `xfer`.
 - In firmware 1.09, the `81 05` reports go to a dispatcher at `0x10b68`. Its read handler, `0x107f8`, reads at most 46 bytes at the address asked and replies; it changes nothing.
 
+## Checking update mode (0.3)
+
+Once you have a backup, this checks how the controller enters and leaves update mode, without erasing or writing anything:
+
+```sh
+python3 -m u2w_backup check-update-mode --trace sent.txt
+```
+
+1. By cable, it reads the bootloader with `81 05 05` and stops unless it matches your latest backup.
+2. It sends `81 05 00 51 00`, which the firmware (handler at `0x11504` in 1.09) answers by setting a flag in an analog register and restarting. The bootloader sees the flag and stays in update mode, as `2dc8:3208` "8BitDo Boot". Nothing in the flash changes.
+3. In update mode it sends only bootloader commands 8 (identify, which should answer `0x6012`), 5 (read) and 7 (restart). It reads the bootloader and the firmware and compares them with your backup.
+4. Command 7 clears the flag and restarts the controller, which should come back as before.
+
+Everything sent to the bootloader goes through `BootReadsOnly` in `u2w_backup/update_mode.py`, which refuses erase, write and any other command. `cut -c1-14 sent.txt | sort | uniq -c` should list only `81 05 05` reads, one `81 05 00 51 00`, `05 05` reads, one `05 08` and one `05 07`.
+
+If macOS asks whether to allow the accessory when the controller restarts, allow it. If the tool stops while the controller is in update mode, run `python3 -m u2w_backup leave-update-mode` (identify, then restart only), or hold Home for about 12 seconds with the cable unplugged.
+
 ## What the files are
 
 - `backup-….bin` is the whole flash, read twice and saved only if both reads match. It holds your controller's own data, such as its Bluetooth pairings, so keep it to yourself.
