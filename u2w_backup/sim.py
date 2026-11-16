@@ -48,8 +48,9 @@ class Channel:
 
 
 class Boot(SimBoot):
-    def __init__(self, flash):
-        super().__init__(flash, identity=0x6012)
+    def __init__(self, flash, fail_after=None):
+        super().__init__(flash, fail_after=fail_after, identity=0x6012)
+        self.f = flash   # one flash for both modes, so writes show up after the restart
 
     def xfer(self, r, timeout=0.5, accept=None):
         sent.append(bytes(r))
@@ -60,7 +61,7 @@ class Boot(SimBoot):
 
 def _flash():
     if state["flash"] is None:
-        state["flash"] = image(core.official())
+        state["flash"] = bytearray(image(core.official()))
     return state["flash"]
 
 

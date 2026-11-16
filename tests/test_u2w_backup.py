@@ -216,11 +216,19 @@ class UpdateModeTest(unittest.TestCase):
                 ch.xfer(r)
         self.assertEqual(ch.sent, 0)
 
-    def test_leave_sends_identify_and_restart(self):
+    def test_leave_sends_identify_and_restart_only_with_whole_firmware(self):
         sim.state["mode"] = "boot"
-        self.um.leave(sim.list_devices, sim.open_channel, self.say)
-        self.assertEqual(self.boot_cmds(), [8, 7])
+        self.um.leave(sim.list_devices, sim.open_channel, self.say, folder=self.dir)
+        self.assertEqual(set(self.boot_cmds()), {8, 5, 7})
         self.assertEqual(sim.state["mode"], "app")
+        sim.sent.clear()
+        sim.state.update(mode="boot", flash=bytearray(self.flash[:0x6000]) + b"\xff" * 0x1000 + bytearray(self.flash[0x7000:]))
+        with unittest.mock.patch.object(core, "official", lambda *a: None):
+            with self.assertRaises(core.Stop) as e:
+                self.um.leave(sim.list_devices, sim.open_channel, self.say, folder=self.dir)
+        self.assertIn("isn't whole", str(e.exception))
+        self.assertNotIn(7, self.boot_cmds())
+        self.assertEqual(sim.state["mode"], "boot")
 
     def test_without_a_backup_nothing_is_sent(self):
         for p in self.dir.glob("backup-*.bin"):
@@ -229,3 +237,82 @@ class UpdateModeTest(unittest.TestCase):
             self.run_check()
         self.assertIn("Make a backup first", str(e.exception))
         self.assertEqual(sim.sent, [])
+
+
+class RestoreTest(unittest.TestCase):
+    """restore-original on the simulated controller, whose flash is shared by both modes."""
+    def setUp(self):
+        from u2c_customfw.protocol import boot
+        from u2w_backup import restore
+        self.boot, self.rs = boot, restore
+        self.dir = Path(tempfile.mkdtemp())
+        self.payload = (PAYLOAD + b"\xff" * restore.SIZE)[:restore.SIZE]
+        f = bytearray(flash())
+        f[0x5000:0x5000 + restore.SIZE] = self.payload
+        self.good = bytes(f)
+        (self.dir / "backup-20261116-000000.bin").write_bytes(self.good)
+        sim.sent.clear()
+        sim.state.update(mode="app", flash=bytearray(self.good))
+        self.addCleanup(lambda: sim.state.update(mode="app", flash=None))
+        p = unittest.mock.patch.object(core, "official", lambda *a: self.payload)
+        p.start(); self.addCleanup(p.stop)
+        self.lines = []
+
+    def run_restore(self, **kw):
+        self.rs.run(sim.list_devices, sim.open_channel, self.dir, lambda *w: self.lines.append(" ".join(map(str, w))), wait=2, **kw)
+
+    def boot_ops(self):
+        return [(int.from_bytes(r[1:3], "little"), int.from_bytes(r[13:17], "little"), int.from_bytes(r[9:13], "little"))
+                for r in sim.sent if r[0] == 5]
+
+    def test_without_write_only_reads(self):
+        self.run_restore()
+        self.assertEqual(self.lines[-1], "done checked")
+        self.assertIn("Update record at 0x31000: no version, magic ffffffff, source 0xffffffff, length 0xffffffff", "\n".join(self.lines))
+        self.assertTrue(all(r[:3] == b"\x81\x05\x05" for r in sim.sent))
+        self.assertEqual(bytes(sim.state["flash"]), self.good)
+
+    def test_write_rewrites_bank_a_sector_by_sector_with_its_first_sector_last(self):
+        sim.state["flash"][0x10000:0x10010] = b"\0" * 16   # a damaged sector, so the write shows
+        self.run_restore(write=True)
+        self.assertEqual(self.lines[-1], "done 8BitDo's firmware 1.09 restored")
+        self.assertEqual(bytes(sim.state["flash"]), self.good)
+        erases = [(a, n) for c, a, n in self.boot_ops() if c == 4]
+        self.assertEqual(erases, [(a, 0x1000) for a in self.rs.ORDER])
+        self.assertEqual(erases[-1][0], 0x5000)
+        writes = [a for c, a, n in self.boot_ops() if c == 3]
+        self.assertTrue(all(0x5000 <= a < self.rs.END for a in writes))
+        self.assertEqual(sim.state["mode"], "app")
+
+    def test_an_interrupted_write_stays_in_update_mode_and_finishes_when_run_again(self):
+        real = sim.Boot
+        with unittest.mock.patch.object(sim, "Boot", lambda f: real(f, fail_after=40)):
+            with self.assertRaises(core.Stop) as e:
+                self.run_restore(write=True)
+        self.assertIn("half-written", str(e.exception))
+        self.assertIn("don't hold Home", str(e.exception))
+        self.assertEqual(sim.state["mode"], "boot")
+        self.assertEqual(bytes(sim.state["flash"][0x5000:0x6000]), self.good[0x5000:0x6000])   # the header untouched
+        self.run_restore(write=True)
+        self.assertEqual(bytes(sim.state["flash"]), self.good)
+        self.assertEqual(sim.state["mode"], "app")
+
+    def test_a_staged_update_stops_it_before_anything_is_written(self):
+        rec = bytearray(b"\xff" * 0x34)
+        rec[0x18:0x1C] = self.rs.STAGED_MAGIC
+        rec[0x20:0x24] = (0x23800).to_bytes(4, "little")
+        sim.state["flash"][self.rs.RECORD:self.rs.RECORD + 0x34] = rec
+        with self.assertRaises(core.Stop) as e:
+            self.run_restore(write=True)
+        self.assertIn("staged", str(e.exception))
+        self.assertTrue(all(r[0] == 0x81 and r[:3] == b"\x81\x05\x05" for r in sim.sent))
+
+    def test_nothing_outside_bank_a_can_be_erased_or_written(self):
+        ch = self.rs.BootWriter(sim.Boot(bytearray(self.good)))
+        for r in (self.boot.request(4, 0x4000, 0x1000), self.boot.request(4, 0x29000, 0x1000),
+                  self.boot.request(4, 0x5000, 0x2000), self.boot.request(4, 0x5000, 0x20),
+                  self.boot.request(3, 0x4FF0, 0, b"x" * 46), self.boot.request(3, 0x28800 - 10, 0, b"x" * 46),
+                  self.boot.request(9)):
+            with self.assertRaises(core.Stop):
+                ch.xfer(r)
+        self.assertEqual(ch.sent, 0)

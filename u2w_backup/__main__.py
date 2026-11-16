@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Runs one backup and tells the app how it goes, one line at a time: note, status, progress, done or fail.
 
-From source: python3 -m u2w_backup [check-update-mode | leave-update-mode] [--trace FILE], where FILE gets every report
+From source: python3 -m u2w_backup [check-update-mode | leave-update-mode | restore-original [--write]] [--trace FILE], where FILE gets every report
 sent to the controller, in hex. With no command it makes a backup; check-update-mode is in update_mode.py."""
 import os
 import sys
@@ -45,7 +45,7 @@ def run(devices, open_channel, folder: Path = FOLDER, opener=None, trace=None) -
 def main() -> None:
     from . import update_mode
     trace = open(sys.argv[sys.argv.index("--trace") + 1], "w", buffering=1) if "--trace" in sys.argv else None
-    what = next((a for a in sys.argv[1:] if a in ("check-update-mode", "leave-update-mode")), "backup")
+    what = next((a for a in sys.argv[1:] if a in ("check-update-mode", "leave-update-mode", "restore-original")), "backup")
     try:
         if os.environ.get("U2W_SIM"):
             from . import sim
@@ -56,10 +56,13 @@ def main() -> None:
         try:
             if what == "backup":
                 run(devices, open_channel, folder, trace=trace)
+            elif what == "restore-original":
+                from . import restore
+                restore.run(devices, open_channel, folder, say, write="--write" in sys.argv, trace=trace)
             elif what == "check-update-mode":
                 update_mode.check(devices, open_channel, folder, say, trace)
             else:
-                update_mode.leave(devices, open_channel, say, trace)
+                update_mode.leave(devices, open_channel, say, trace, folder)
         except Exception as e:
             if type(e).__name__ != "PermissionDenied":
                 raise

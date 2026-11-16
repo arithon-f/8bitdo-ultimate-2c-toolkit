@@ -20,7 +20,7 @@ BOOT_PID, IDENTITY = 0x3208, 0x6012
 ENTER = bytes([0x81, 0x05, 0x00, 0x51, 0x00]).ljust(64, b"\0")
 BANK_A_END = 0x28800          # 8BitDo's 1.09: 0x23800 bytes from 0x5000
 LEAVE_HELP = ("To leave update mode, run `python3 -m u2w_backup leave-update-mode`, or hold Home for about 12 seconds "
-              "with the cable unplugged. Nothing was written to the controller's memory.")
+              "with the cable unplugged (as on the Ultimate 2C). Nothing was written to the controller's memory.")
 
 
 class EnterOnce(core.ReadsOnly):
@@ -137,17 +137,27 @@ def check(devices, open_channel, folder: Path, say, trace=None, wait: float = 30
     say("done", "update mode checked")
 
 
-def leave(devices, open_channel, say, trace=None) -> None:
+def leave(devices, open_channel, say, trace=None, folder: Path | None = None, opener=None) -> None:
+    """Restart out of update mode, but only with a whole firmware in bank A: the backup's, or 8BitDo's 1.09."""
     bdev = next((d for d in devices() if _in_boot(d)), None)
     if bdev is None:
         raise core.Stop("No controller in update mode was found.")
     bch = BootReadsOnly(open_channel(bdev, 0), trace)
     try:
         who = boot.identify(bch)
+        bank = boot.read(bch, core.BASE, BANK_A_END - core.BASE) if who == IDENTITY else None
     finally:
         bch.close()
     if who != IDENTITY:
         raise core.Stop(f"The device in update mode identifies as {who if who is None else hex(who)}, not as this "
                         "controller, so nothing else was sent to it.")
+    backups = sorted(Path(folder).glob("backup-*.bin")) if folder else []
+    whole = bool(backups) and bank == backups[-1].read_bytes()[core.BASE:BANK_A_END]
+    if not whole:
+        payload = core.official(opener) if opener else core.official()
+        whole = payload is not None and bank == payload[:BANK_A_END - core.BASE]
+    if not whole:
+        raise core.Stop("The firmware on the controller isn't whole (it matches neither your backup nor 8BitDo's 1.09), "
+                        "so it was left in update mode. Run `python3 -m u2w_backup restore-original --write` to finish.")
     _restart(open_channel, bdev, trace, say)
     say("done", "restart sent; the controller should come back within a few seconds")

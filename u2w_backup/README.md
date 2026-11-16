@@ -40,6 +40,19 @@ Everything sent to the bootloader goes through `BootReadsOnly` in `u2w_backup/up
 
 If macOS asks whether to allow the accessory when the controller restarts, allow it. If the tool stops while the controller is in update mode, run `python3 -m u2w_backup leave-update-mode` (identify, then restart only), or hold Home for about 12 seconds with the cable unplugged.
 
+## Putting 8BitDo's firmware back (0.4, the first write)
+
+```sh
+python3 -m u2w_backup restore-original                         # checks only: reads, nothing written
+python3 -m u2w_backup restore-original --write --trace sent.txt
+```
+
+It downloads 8BitDo's firmware 1.09 from its update server and checks its SHA-256, then checks, reading only, that the bootloader matches your latest backup, prints the fields of the update record at `0x31000` and checks that no update is staged in it (the bootloader would install it over this at the next start). With `--write`, it enters update mode as `check-update-mode` does, identifies the controller again, and rewrites bank A (`0x5000`–`0x29000`) one 4 KB sector at a time: erase, write in 46-byte chunks (the bootloader checks each chunk's CRC), read back. Sector `0x5000` goes last, because it holds the header the bootloader checks the firmware against, so the header already there stays valid until the end. Then it reads the whole bank back, restarts the controller with command 7 and reads the firmware again by cable.
+
+Nothing outside `0x5000`–`0x29000` is erased or written: `BootWriter` in `u2w_backup/restore.py` refuses any other erase or write, and the bootloader, the update record, bank B and your controller's own data are never touched. If it stops partway, the controller is left in update mode with half-written firmware: run the same command again to finish it, and until then don't hold Home, unplug it or run `leave-update-mode` (which refuses anyway unless the firmware reads back whole). The bootloader also stays in update mode while two buttons are held at power-on; on the Ultimate 2C they are LB + RB, which is yet to be confirmed on this controller. The bootloader itself refuses to erase or write below `0x5000` or above `0x7f000`.
+
+With your controller already on 1.09, the result is the same firmware it has now: the point is to prove that restoring works before anything else is installed.
+
 ## What the files are
 
 - `backup-….bin` is the whole flash, read twice and saved only if both reads match. It holds your controller's own data, such as its Bluetooth pairings, so keep it to yourself.
