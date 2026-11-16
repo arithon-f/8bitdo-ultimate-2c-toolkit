@@ -263,7 +263,7 @@ def make_server(store: Path, port: int = 0):
                                                  + [{"key": "ring", "title": ring[0] if ring else "Home ring: normal", "on": bool(ring)}]}))
 
         def dongle_report(self, f, in_boot=False):
-            """The dongle, read-only: its firmware, the one tweak there is for it, and its backups here."""
+            """The dongle, read-only: its firmware, its tweaks, and its backups here."""
             try:
                 ch = cli.open_channel(f.info, 0 if in_boot else 0x81)
                 try:
@@ -276,13 +276,13 @@ def make_server(store: Path, port: int = 0):
             except (OpError, OSError, ProtocolError) as e:
                 return self.send(200, json.dumps({"error": str(e)}))
             usable = [(p, dongle.state(d[dongle.BASE:dongle.END])) for p, d in found]
-            pick = next(((p, xbox) for p, (known, xbox) in usable if known), None)
+            pick = next(((p, tweaks) for p, (known, tweaks) in usable if known), None)
             self.send(200, json.dumps({"device": "dongle", "paired": f.mode == "dongle_paired", "boot": in_boot, "backed": bool(found),
                                        "restore_backup": pick and {"name": pick[0].name, "taken": bkp.taken(pick[0]),
-                                                                   "firmware": f"firmware 1.03 with {dongle.TITLE}" if pick[1] else "the original firmware 1.03"},
+                                                                   "firmware": dongle.describe(pick[1])},
                                        "stock_ok": fw.known or pick is not None,
                                        "known": fw.known, "version": fw.version,
-                                       "tweaks": [{"key": "dongle_360", "title": "Xbox 360 controller over 2.4 GHz", "on": fw.xbox360}]}))
+                                       "tweaks": [{"key": k, "title": title, "on": k in fw.tweaks} for k, (title, _) in dongle.TWEAKS.items()]}))
 
         def api_events(self):
             if not self.auth():

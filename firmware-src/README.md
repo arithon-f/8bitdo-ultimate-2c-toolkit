@@ -1,6 +1,6 @@
 # Firmware sources
 
-Our own code for the controller (Telink TC32, firmware 1.09). The built binaries are committed in
+Our own code for the controller (Telink TC32, firmware 1.09) and the dongle (firmware 1.03). The built binaries are committed in
 `u2c_customfw/firmware/blobs/` with a `MANIFEST` of their SHA-256, so users never need this toolchain.
 
 | Blob | Placed at | What it is |
@@ -27,6 +27,7 @@ Our own code for the controller (Telink TC32, firmware 1.09). The built binaries
 | `resthook.bin` | `0xa484` | the main loop's call, redirected from `main_poll` to `rest_main_poll`; takes over the ring's `pollhook.bin` when installed |
 | `stall.bin` | image `0x848c`, run address `0x248c` (dead RAM code: an unused `memcmp`) | `stall_hook`: the Bluetooth branch's `motor_set(0, 0, 0)`, then, on battery with no hold running, the CPU stops for 1 ms or until the radio wakes it (`0x80` to `0x80006f`, wake mask `0x800078`, timer0) |
 | `hstall.bin` | `0xa4ae` | the Bluetooth branch's call, redirected from `0xfa68` to `stall_hook` |
+| `dinput.bin` | the dongle (firmware 1.03), `0xff48` (zeros after the image) | `link_mode` (`dongle.s`): at link-up, D-input for the controller's `0x8f` packets as in the dongle's 1.00, X-input otherwise. Linked on its own by `build.sh`, with 1.03's addresses |
 | `ring02.bin`, `ringhook02.bin`, `rumble02.bin` | not installed | 0.2.0's versions, kept to recognise firmware it installed |
 | `ringtail03.bin`, `ringhook03.bin`, `vhooka03.bin`, `vhookb03.bin`, `pollhook03.bin`, `rumble03.bin` | not installed | 0.3.0's versions, kept to recognise firmware it installed |
 

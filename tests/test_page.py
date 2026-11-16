@@ -130,13 +130,14 @@ class TabsTest(PageCase):
         dom = self.server.dom(query)
         return dom, dom.find("fw-title").all_text(), dom.find("fw-note").all_text()
 
-    def test_the_dongle_shows_its_firmware_and_its_one_tweak(self):
+    def test_the_dongle_shows_its_firmware_and_its_tweaks(self):
         dom, title, note = self.hero("&diagsim=dongle")
         self.assertEqual((title, note), ("Dongle firmware 1.03 with tweaks", "Connected on its own."))
-        self.assertEqual([" ".join(n.text) for n in dom.find("chips").children], ["Xbox 360 controller over 2.4 GHz"])
+        self.assertEqual([" ".join(n.text) for n in dom.find("chips").children], ["Xbox 360 controller over 2.4 GHz", "D-input mode with B + Home"])
         self.assertIn("hidden", dom.find("ctrl-tweaks").attrs)
         self.assertNotIn("hidden", dom.find("dongle-tweaks").attrs)
         self.assertEqual({k: k in dom.find("dongle-360").attrs for k in ("checked", "disabled")}, {"checked": True, "disabled": False})
+        self.assertEqual({k: k in dom.find("dongle-dinput").attrs for k in ("checked", "disabled")}, {"checked": False, "disabled": False})
         for id_ in ("backup", "patch-dry", "patch-write", "restore-backup", "restore-stock"):
             self.assertNotIn("disabled", dom.find(id_).attrs, id_)
         self.assertIn("hidden", dom.find("pre-boot").attrs)   # the app puts the dongle in update mode itself
