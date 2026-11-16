@@ -772,7 +772,7 @@ class ConfirmTest(PageCase):
     def test_each_tweak_says_what_it_does_and_the_chips_keep_its_name(self):
         dom = self.server.dom("&diagsim=boot&scenario=installask")
         rows = [n for n in dom.find("ctrl-tweaks").walk() if "tw" in n.classes()]
-        self.assertEqual(len(rows), 10)
+        self.assertEqual(len(rows), 11)
         pops = {n.attrs["id"]: n for n in dom.walk() if "pop" in n.classes()}
         for row in rows:   # each explanation is in a pop-up behind its (i) button, outside the row
             info = next(n for n in row.walk() if "info" in n.classes())
@@ -782,7 +782,7 @@ class ConfirmTest(PageCase):
             self.assertFalse(any(n.tag == "small" for n in row.walk()), row.all_text())
         notes = {next(n for n in row.walk() if n.tag == "input").attrs["value"]: next((n.all_text() for n in row.walk() if "note" in n.classes()), None) for row in rows}
         self.assertEqual(notes["bt_rumble"], "Needs Xbox Series X|S controller over Bluetooth.")
-        self.assertEqual(sum(1 for v in notes.values() if v), 3)   # Rumble, Finer stick movement, Faster button reading
+        self.assertEqual(sum(1 for v in notes.values() if v), 4)   # Rumble, Finer stick movement, Faster button reading, Faster Bluetooth input
         self.assertFalse(any("data-ring" in n.attrs for n in dom.find("tab-firmware").walk()))   # the ring is set in Settings only
         chips = [" ".join(n.text) for n in dom.find("confirm-chips").children]
         self.assertIn("Rumble over Bluetooth", chips)
@@ -896,7 +896,8 @@ class HelpTest(PageCase):
         self.assertIn("Backups are kept on this Mac, in ~/Library/Application Support/u2c-customfw.", text)
         self.assertEqual(text.count("It needs the Home ring's code."), 3)   # Battery alerts, Controller settings and Fixes
         order = [text.rindex(t + ".") for t in ("Xbox Series X|S controller over Bluetooth", "Rumble over Bluetooth", "Xbox 360 controller over cable", "Dimmer LEDs",
-                                              "Battery alerts", "Controller settings", "Fixes", "Processor rest", "Finer stick movement", "Faster button reading")]
+                                              "Battery alerts", "Controller settings", "Fixes", "Processor rest", "Finer stick movement", "Faster button reading",
+                                              "Faster Bluetooth input")]
         self.assertEqual(order, sorted(order))
 
     def test_the_hero_lists_the_tweaks_in_the_toggles_order(self):
