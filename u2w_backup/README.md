@@ -60,6 +60,17 @@ Nothing outside `0x5000`–`0x29000` is erased or written: `BootWriter` in `u2w_
 
 With your controller already on 1.09, the result is the same firmware it has now: the point is to prove that restoring works before anything else is installed.
 
+## Controller test (a separate prototype)
+
+`macos/u2w/test.swift` is a small app that only reads and shows, with no firmware code: what IOKit lists for 8BitDo devices, what GameController makes of each controller (name, category, profile, vibration, motion, battery), every button, axis and pad as it moves, and two rumble tests, through GameController and with 8BitDo's own output report (ID 5, then a stop 0.7 s later). It writes nothing to the controller's memory.
+
+```sh
+macos/u2w/build-test.sh      # needs swiftc, from the Xcode command line tools
+open "dist/u2w/Ultimate 2 Wireless Controller Test.app"
+```
+
+The first time, macOS may ask to allow the app (System Settings › Privacy & Security › Open Anyway) or for Input Monitoring.
+
 ## What the files are
 
 - `backup-….bin` is the whole flash, read twice and saved only if both reads match. It holds your controller's own data, such as its Bluetooth pairings, so keep it to yourself.
