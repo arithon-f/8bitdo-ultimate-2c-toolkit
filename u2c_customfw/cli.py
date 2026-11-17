@@ -366,6 +366,11 @@ def cmd_report(args, store):
     args.say(report.report(find(), st, tail) + ("(firmware state is from the newest backup)\n" if st else ""))
 
 
+def cmd_dongle_mode_test(args, store):
+    """Exercise only mode switching and identity checks; no flash writes."""
+    args.say(dng.mode_test(find, open_channel))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="u2c-customfw", description="Back up, patch and repair an 8BitDo Ultimate 2C (firmware 1.09).")
     common = argparse.ArgumentParser(add_help=False)
@@ -374,6 +379,7 @@ def main(argv=None) -> int:
     sub.add_parser("devices", parents=[common])
     sub.add_parser("backup", parents=[common])
     sub.add_parser("report", parents=[common])
+    sub.add_parser("dongle-mode-test", parents=[common], help="test dongle bootloader entry and return without flashing")
     p = sub.add_parser("identify", parents=[common]); p.add_argument("file")
     p = sub.add_parser("patch", parents=[common])
     p.add_argument("--tweaks", default="", help="comma list of: " + ", ".join(shown(k for k, r in recipes.RECIPES.items() if not r.earlier_form_of))
@@ -397,12 +403,12 @@ def main(argv=None) -> int:
     get_logger(store).info("command %s", args.cmd)
     lock = None
     try:
-        if args.cmd in ("devices", "backup", "patch", "restore"):
+        if args.cmd in ("devices", "backup", "patch", "restore", "dongle-mode-test"):
             lock = state.lock_device(store)
             if lock is None:
                 raise Exit(2, "Another copy of the app, or the command line, is using the controller. Wait until it finishes, then try again.")
         {"devices": cmd_devices, "backup": cmd_backup, "identify": cmd_identify, "patch": cmd_patch,
-         "restore": cmd_restore, "report": cmd_report}[args.cmd](args, store)
+         "restore": cmd_restore, "report": cmd_report, "dongle-mode-test": cmd_dongle_mode_test}[args.cmd](args, store)
     except Exit as e:
         print(f"{e.msg} {e.hint}".strip(), file=sys.stderr)
         return e.code

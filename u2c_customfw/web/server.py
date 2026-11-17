@@ -22,6 +22,7 @@ from ..ops.plan import OpError
 from ..protocol import ProtocolError, app
 from ..transport import PermissionDenied
 from . import jobs
+from .linux_gamepad import GAMEPAD
 
 STATIC = Path(__file__).parent / "static"
 SETTINGS_MISSING = "Controller settings isn't installed. Install it in the Firmware tab to change the sticks, triggers, buttons and vibration."
@@ -66,7 +67,7 @@ def make_server(store: Path, port: int = 0):
                 return self.send(403, "forbidden", "text/plain")
             path = self.path.split("?")[0]
             route = {"/api/state": self.api_state, "/api/events": self.api_events, "/api/firmware": self.api_firmware,
-                     "/api/settings": self.api_settings_read, "/api/busy": self.api_busy, "/api/update": self.api_update}.get(path)
+                     "/api/settings": self.api_settings_read, "/api/linux-gamepad": self.api_linux_gamepad, "/api/busy": self.api_busy, "/api/update": self.api_update}.get(path)
             if route:
                 return route()
             name = "index.html" if path == "/" else path.lstrip("/").removeprefix("static/")
@@ -74,6 +75,13 @@ def make_server(store: Path, port: int = 0):
             if f.parent == STATIC.resolve() and f.is_file():
                 return self.send(200, f.read_bytes(), TYPES.get(f.suffix, "application/octet-stream"))
             self.send(404, "not found", "text/plain")
+
+        def api_linux_gamepad(self):
+            if not self.auth():
+                return
+            if sys.platform != "linux":
+                return self.send(404, json.dumps({"error": "Linux only"}))
+            self.send(200, json.dumps(GAMEPAD.snapshot()))
 
         def api_state(self):
             if not self.auth():
@@ -354,6 +362,13 @@ def make_server(store: Path, port: int = 0):
             except ValueError:
                 return self.send(400, json.dumps({"error": "bad request"}))
             route = self.path.split("?")[0]
+            if route == "/api/linux-gamepad/rumble":
+                if sys.platform != "linux":
+                    return self.send(404, json.dumps({"error": "Linux only"}))
+                if req.get("locality") not in ("default", "left", "right"):
+                    return self.send(400, json.dumps({"error": "Invalid locality"}))
+                result = GAMEPAD.rumble(req["locality"])
+                return self.send(200 if result["ok"] else 422, json.dumps(result))
             if route == "/api/accept":
                 state.accept(store)
                 return self.send(200, json.dumps({"accepted": True}))
@@ -393,7 +408,17 @@ def serve(store: Path, port: int = 0) -> None:
     print(f"U2C_URL http://127.0.0.1:{httpd.server_address[1]}/?token={token}{page}", flush=True)
     if os.environ.get("U2C_EXIT_ON_EOF"):   # started by the Mac app, which holds our stdin open while it lives
         threading.Thread(target=exit_when_orphaned, args=(httpd.runner,), daemon=True).start()
-    httpd.serve_forever()
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping WebUI...", flush=True)
+    finally:
+        # Firmware jobs run in daemon threads. Never exit while a write is active.
+        with httpd.runner.cond:
+            if httpd.runner.running:
+                print("Waiting for the current operation to finish...", flush=True)
+            httpd.runner.cond.wait_for(lambda: not httpd.runner.running)
+        httpd.server_close()
 
 
 def exit_when_orphaned(runner, stdin=None, wait: float = 1.0, exit=os._exit) -> None:

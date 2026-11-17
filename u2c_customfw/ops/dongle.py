@@ -8,6 +8,7 @@ this dongle (docs, dongle-analysis): `81 05 00 51 00` on the idle dongle, which 
 anything stops before the header is written, the bootloader finds no app and stays in update mode, where Restore works.
 Nothing outside bank A is ever written: the update record, bank B, the calibration and the licence sector stay as they are."""
 import datetime
+import errno
 import hashlib
 import time
 from dataclasses import dataclass, field
@@ -247,6 +248,57 @@ def _wait(find, mode, seconds, step):
     return None
 
 
+# Linux hidraw may return EIO when the dongle disconnects immediately after
+# accepting the update-mode command. This is *not* evidence of success: the
+# caller must still detect and identify the bootloader before doing anything.
+_REENUMERATION_ERRNOS = frozenset((errno.EIO, errno.ENODEV, errno.ESHUTDOWN))
+
+
+def _request_update_mode(ch):
+    try:
+        ch.xfer(bytes([0x81, 0x05, 0x00, 0x51, 0x00]).ljust(64, b"\0"), 0.5)
+    except OSError as e:
+        if e.errno not in _REENUMERATION_ERRNOS:
+            raise
+        # An expected USB disconnect is verified by finding and identifying
+        # the dongle bootloader; never interpret EIO alone as success.
+
+
+def mode_test(find, open_channel, wait: float = 0.3) -> str:
+    """Non-flashing diagnostic: switch idle dongle -> boot -> idle.
+
+    Does not issue erase (4) or write (3). If boot identification fails,
+    leave the device untouched and report the error.
+    """
+    if _one(find, "boot") is not None:
+        raise OpError("A bootloader is already connected. Unplug other devices and reconnect the dongle normally.")
+    idle = _one(find, "dongle")
+    if idle is None:
+        raise OpError("Connect only the idle dongle (2dc8:301c), with the controller off.")
+    ch = open_channel(idle, 0x81)
+    try:
+        _request_update_mode(ch)
+    finally:
+        ch.close()
+    info = _wait(find, "boot", 8, wait)
+    if info is None:
+        raise OpError("Dongle did not appear in update mode. No flash operations were performed.")
+    ch = open_channel(info, 0)
+    try:
+        if boot.identify(ch) != boot.DONGLE_ID:
+            raise OpError("Bootloader identity is not 0x301c. No restart or flash commands were sent.")
+        try:
+            ch.xfer(boot.request(7), 0.5)
+        except OSError as e:
+            if e.errno not in _REENUMERATION_ERRNOS:
+                raise
+    finally:
+        ch.close()
+    if _wait(find, "dongle", 10, wait) is None:
+        raise OpError("Dongle was identified in update mode, but did not reappear as 2dc8:301c. Replug it; no flash operations were performed.")
+    return "Dongle switched to bootloader (identity 0x301c) and returned to normal mode. No firmware was erased or written."
+
+
 STAGED_MAGIC = (0xAEB14D6C).to_bytes(4, "little")
 STAGED = ("An update is staged on this dongle, and its update-mode code would install it over the new firmware the next "
           "time it starts. Nothing was written. Unplug the dongle and plug it back in once, then try again.")
@@ -276,7 +328,7 @@ def apply(find, open_channel, unit_backup: bytes, bank: bytes, progress, wait: f
                 raise OpError("This dongle doesn't match the backup, so nothing was written.")
             if staged(_read(ch, RECORD, 0x24)):
                 raise OpError(STAGED)
-            ch.xfer(bytes([0x81, 0x05, 0x00, 0x51, 0x00]).ljust(64, b"\0"), 0.5)
+            _request_update_mode(ch)
         finally:
             ch.close()
         boot_info = _wait(find, "boot", 8, wait)
