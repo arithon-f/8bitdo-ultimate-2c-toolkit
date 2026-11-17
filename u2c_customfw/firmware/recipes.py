@@ -17,7 +17,7 @@ BLOBS = Path(__file__).parent / "blobs"
 NAME = b"8BitDo Ultimate 2C (X/S)"
 OLD_NAME = b"8BitDo Ultimate 2C (One)"  # what versions before 0.2 installed: still recognised, never written
 OLD_NAME_LEN = 27
-CABLE_NAME = "8BitDo Ultimate 2C (Wired)"   # by cable, in the same style as NAME, unless another is chosen
+CABLE_NAME = "8BitDo Ultimate 2C (Wired)"   # by cable, in the same style as NAME: a suggestion, written only if chosen
 STOCK_CABLE_NAME = "8BitDo Ultimate 2C Wireless Controller"   # 8BitDo's, which the dongle uses too; still recognised
 PACKER_SLOT = (0xB908, 0xBAD4)
 RING_LEVELS = (("ring_off", "Home ring: off", 0), ("ring_0_1", "Home ring: 0.1 %", 1), ("ring_1", "Home ring: 1 %", 10),
@@ -60,6 +60,7 @@ class NameSlot:
     max_len: int
     at: tuple[int, int]                    # the region the name is read back from
     read: Callable[[bytes], str | None]    # its text, or None if it isn't one written by this slot
+    suggestion: str = ""                   # offered in the app; never written unless chosen
 
 
 @dataclass(frozen=True)
@@ -158,7 +159,7 @@ def _make() -> dict[str, Recipe]:
             # dongle's too) reads as this tweak as well. The "Wired Controller" one at 0x179f4 is the battery-less 2C Wired's, picked at 0xe902
             named(0x1792C, cable_name),
             named(0xE91C, lambda n: bytes([2 + 2 * len(n)])),     # ... and the length it's sent with: movs r3, #n
-        ), name=NameSlot("Name over cable", CABLE_NAME, 38, (0x1792C, 0x4E), _read_usb_string)),
+        ), name=NameSlot("Name over cable", STOCK_CABLE_NAME, 38, (0x1792C, 0x4E), _read_usb_string, CABLE_NAME)),
         Recipe("dim_leds", "Dimmer LEDs", (), (
             Edit(0x7738, _blob("led.bin")),                      # main_tick, run from RAM at 0x1738
             Edit(0xA43C, _blob("hook.bin")),                     # main loop calls main_tick instead of 0xfaa0
@@ -230,7 +231,7 @@ def _make() -> dict[str, Recipe]:
     )}
 
 
-DEFAULT_NAMES = {a: NAME.decode() for a in (0x172DC, 0x17488, 0x17254, 0xA214)} | {a: CABLE_NAME for a in (0x1792C, 0xE91C)}
+DEFAULT_NAMES = {a: NAME.decode() for a in (0x172DC, 0x17488, 0x17254, 0xA214)} | {a: STOCK_CABLE_NAME for a in (0x1792C, 0xE91C)}
 RECIPES: dict[str, Recipe] = _make()
 
 
@@ -265,10 +266,10 @@ def masked(img: bytes) -> bytes:
 
 
 def build(stock: bytes, keys, stock_sha256=None, region_sha256=None, remainder_sha256=None, names=None) -> bytes:
-    """The app area: stock plus the chosen tweaks, each name slot with its default or the name in names (recipe -> text).
-    Refuses anything but stock, an unknown tweak, a missing dependency or a name that isn't one."""
+    """The app area: stock plus the chosen tweaks, each name slot with its default or the name in names (recipe -> text;
+    "" is the default too). Refuses anything but stock, an unknown tweak, a missing dependency or a name that isn't one."""
     stock_sha, regions, _ = _constants(stock_sha256, region_sha256, remainder_sha256)
-    names = dict(names or {})
+    names = {k: v for k, v in (names or {}).items() if v != ""}
     if len(stock) != BANK_A_SIZE or _sha(stock) != stock_sha:
         raise RecipeError("the base image is not stock v1.09 bank A")
     keys = list(keys)

@@ -139,8 +139,13 @@ def _dongle_change(args, store, f, tweaks=(), source: str | None = None, chosen=
         base = cur if dng.state(cur)[0] else next((d[dng.BASE:dng.END] for _, d in found if dng.state(d[dng.BASE:dng.END])[0]), None)
         if base is None:
             raise Exit(2, "Neither the dongle nor its backups hold firmware this app recognises, so nothing was written.")
+        chosen = dict(chosen or {})
+        held = dng.names(cur)   # reinstalling keeps a name chosen before, unless another (or "") is given
+        for k in dng.NAMES:
+            if k in tweaks and k not in chosen and held.get(k) not in (None, dng.NAMES[k].stock):
+                chosen[k] = held[k]
         new = dng.target(base, tweaks, chosen)
-        called = " ".join(f"{dng.NAMES[k].label}: “{(chosen or {}).get(k, dng.NAMES[k].default)}”." for k in dng.NAMES if k in tweaks)
+        called = " ".join(f"{dng.NAMES[k].label}: “{chosen.get(k) or dng.NAMES[k].default}”." for k in dng.NAMES if k in tweaks)
         what = (f"This installs {dng.describe(tweaks)} on the dongle." + (f" {called}" if called else "") if tweaks
                 else "This installs 8BitDo's original firmware 1.03 on the dongle.")
     if cur == new:
@@ -374,10 +379,11 @@ def main(argv=None) -> int:
     p.add_argument("--tweaks", default="", help="comma list of: " + ", ".join(shown(k for k, r in recipes.RECIPES.items() if not r.earlier_form_of))
                    + "; for the dongle: " + ", ".join(dng.TWEAKS))
     p.add_argument("--backup"); p.add_argument("--download", action="store_true", help="use 8BitDo's v1.09 from its server")
-    p.add_argument("--bt-name", help=f"the Bluetooth name, with bt_xbox (default “{recipes.RECIPES['bt_xbox'].name.default}”)")
-    p.add_argument("--cable-name", help=f"the name by cable, with cable_360 (default “{recipes.RECIPES['cable_360'].name.default}”)")
-    p.add_argument("--xinput-name", help=f"the dongle's name in X-input, with dongle_360 (default “{dng.NAMES['dongle_360'].default}”)")
-    p.add_argument("--dinput-name", help=f"the dongle's name in D-input, with dongle_dinput (default “{dng.NAMES['dongle_dinput'].default}”)")
+    keep = 'without it, the name installed now is kept; "" puts back'
+    p.add_argument("--bt-name", help=f"the Bluetooth name, with bt_xbox ({keep} “{recipes.RECIPES['bt_xbox'].name.default}”)")
+    p.add_argument("--cable-name", help=f"the name by cable, with cable_360 ({keep} 8BitDo's “{recipes.RECIPES['cable_360'].name.default}”)")
+    p.add_argument("--xinput-name", help=f"the dongle's name in X-input, with dongle_360 ({keep} 8BitDo's)")
+    p.add_argument("--dinput-name", help=f"the dongle's name in D-input, with dongle_dinput ({keep} 8BitDo's, the X-input name)")
     p = sub.add_parser("restore", parents=[common])
     p.add_argument("source", choices=["backup", "stock"])
     p.add_argument("--backup", help="this backup file instead of the newest recognised one of the controller")

@@ -101,7 +101,8 @@ class ControllerNameTest(unittest.TestCase):
         self.assertEqual(recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "8BitDo Ultimate 2C (X/S)"}, **self.k), self.built)
 
     def test_names_are_only_printable_text_of_the_slots_length(self):
-        for bad in ("", "x" * 28, " lead", "trail ", "tab\there", "caf\u00e9", 7):
+        self.assertEqual(recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": ""}, **self.k), self.built)   # "": the default
+        for bad in ("x" * 28, " lead", "trail ", "tab\there", "caf\u00e9", 7):
             with self.assertRaises(RecipeError, msg=repr(bad)):
                 recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": bad}, **self.k)
         recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "x" * 27}, **self.k)
@@ -408,9 +409,14 @@ class FromEarlierVersionsTest(unittest.TestCase):
 
     def test_a_cable_name_is_chosen_with_the_xbox_360_tweak(self):
         plain = recipes.build(self.stock, ["cable_360"], names={"cable_360": "Q"}, **self.k)
-        img = recipes.build(self.stock, ["cable_360"], **self.k)   # the default
+        default = recipes.build(self.stock, ["cable_360"], **self.k)   # no name chosen: 8BitDo's, bytes as they were
+        stock_name = recipes.STOCK_CABLE_NAME   # 8BitDo's bytes there (checked against the real 1.09 in RealStockTest)
+        self.assertEqual(default[0x1792C - image.BASE:0x1792C - image.BASE + 0x4E], bytes([0x4E, 3]) + stock_name.encode("utf-16-le"))
+        self.assertEqual(default[0xE91C - image.BASE], 0x4E)
+        self.assertEqual(recipes.identify(default, **self.k).names, {"cable_360": recipes.STOCK_CABLE_NAME})
+        name = recipes.CABLE_NAME   # the suggestion, chosen
+        img = recipes.build(self.stock, ["cable_360"], names={"cable_360": name}, **self.k)
         at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
-        name = "8BitDo Ultimate 2C (Wired)"
         n = 2 + 2 * len(name)
         self.assertEqual(at(0x1792C, 2), bytes([n, 3]))                       # a string descriptor of 54 bytes
         self.assertEqual(at(0x1792C + 2, n - 2).decode("utf-16-le"), name)
@@ -530,6 +536,11 @@ class RealStockTest(unittest.TestCase):
         st = recipes.identify(self.stock)
         self.assertEqual((st.known, st.recipes), (True, ()))
 
+    def test_with_no_name_chosen_the_cable_name_stays_8bitdos(self):
+        img = recipes.build(self.stock, ["cable_360"])
+        for a, n in ((0x1792C, 0x4E), (0xE91C, 1)):
+            self.assertEqual(img[a - image.BASE:a - image.BASE + n], self.stock[a - image.BASE:a - image.BASE + n])
+
     def test_matches_the_payload_verified_on_hardware(self):
         if "U2C_REF_PAYLOAD" not in os.environ:  # a payload flashed and verified on a real controller (not in the repo)
             self.skipTest("set U2C_REF_PAYLOAD to compare with a payload verified on hardware")
@@ -550,7 +561,7 @@ class RealStockTest(unittest.TestCase):
         self.assertEqual(img[0x1792C - image.BASE:0x1792C - image.BASE + 0x4E], self.stock[0x1792C - image.BASE:0x1792C - image.BASE + 0x4E])
         self.assertEqual(img[0xE91C - image.BASE], self.stock[0xE91C - image.BASE])
         self.assertEqual((recipes.identify(img).recipes, recipes.identify(img).names), (("cable_360",), {"cable_360": recipes.STOCK_CABLE_NAME}))
-        self.assertEqual(recipes.identify(recipes.build(self.stock, ["cable_360"])).names, {"cable_360": "8BitDo Ultimate 2C (Wired)"})
+        self.assertEqual(recipes.identify(recipes.build(self.stock, ["cable_360"])).names, {"cable_360": recipes.STOCK_CABLE_NAME})   # none chosen
         self.assertEqual(recipes.identify(self.stock).names, {})
 
 

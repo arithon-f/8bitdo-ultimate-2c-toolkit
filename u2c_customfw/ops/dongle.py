@@ -51,6 +51,7 @@ class DongleName:
     size: int                                   # the slot: 8BitDo's string exactly
     length_at: int                              # movs r3, #len
     code: tuple[tuple[int, bytes, bytes], ...] = ()   # (address, 8BitDo's bytes, the name's) that make the slot the mode's
+    suggestion: str = ""                        # offered in the app; never written unless chosen
 
     @property
     def max_len(self) -> int:
@@ -58,9 +59,13 @@ class DongleName:
 
 
 NAMES = {   # tweak -> its name
-    "dongle_360": DongleName("X-input name", "8BitDo Ultimate 2C (Xbox 360)", "8BitDo Ultimate 2C Wireless Controller", 0xF144, 0x4E, 0xDBC4),
-    "dongle_dinput": DongleName("D-input name", "8BitDo Ultimate 2C (D-input)", "8BitDo Ultimate 2C Wireless (WUKONG)", 0xF508, 0x4A, 0xDBD4,
-                                ((0xDBBC, bytes.fromhex("080b1b2802ab"), bytes.fromhex("01ab01ab01ab")),)),   # ldr r3, =0x84305e; ldrh r3, [r3]; cmp r3, #2 -> cmp r3, #1 x3
+    # default: what a tweak writes when no name is chosen, 8BitDo's own; D-input's then stays as 1.03 has it (the X-input
+    # string in both modes, the Wukong check untouched), and only a chosen D-input name brings in the code below
+    "dongle_360": DongleName("X-input name", "8BitDo Ultimate 2C Wireless Controller", "8BitDo Ultimate 2C Wireless Controller", 0xF144, 0x4E, 0xDBC4,
+                             suggestion="8BitDo Ultimate 2C (Xbox 360)"),
+    "dongle_dinput": DongleName("D-input name", "8BitDo Ultimate 2C Wireless Controller", "8BitDo Ultimate 2C Wireless (WUKONG)", 0xF508, 0x4A, 0xDBD4,
+                                ((0xDBBC, bytes.fromhex("080b1b2802ab"), bytes.fromhex("01ab01ab01ab")),),   # ldr r3, =0x84305e; ldrh r3, [r3]; cmp r3, #2 -> cmp r3, #1 x3
+                                suggestion="8BitDo Ultimate 2C (D-input)"),
 }
 
 
@@ -198,9 +203,9 @@ def unit_backups(store: Path, unit: bytes) -> list[tuple[Path, bytes]]:
 
 
 def target(bank: bytes, tweaks, chosen=None) -> bytes:
-    """Bank A with exactly these tweaks, each with its name (chosen: tweak -> name, else its default), made from a bank the
-    app recognises and checked by hash."""
-    chosen = dict(chosen or {})
+    """Bank A with exactly these tweaks, each with the name chosen for it (tweak -> name), or else 8BitDo's own ("" too),
+    made from a bank the app recognises and checked by hash."""
+    chosen = {k: v for k, v in (chosen or {}).items() if v != ""}
     for key, text in chosen.items():
         if key not in NAMES or key not in tweaks:
             raise OpError(f"A name for {key}, which isn't being installed or has no name. Nothing was written.")
@@ -214,13 +219,15 @@ def target(bank: bytes, tweaks, chosen=None) -> bytes:
         for a, old, tweak in edits:
             new[a - BASE:a - BASE + len(old)] = tweak if key in tweaks else old
     for key, n in NAMES.items():
-        text = chosen.get(key, n.default) if key in tweaks else n.stock
+        named = key in tweaks and key in chosen
+        text = chosen[key] if named else n.stock
         new[n.at - BASE:n.at - BASE + n.size] = _slot(n, text)
         new[n.length_at - BASE] = 2 + 2 * len(text)
         for a, old, code in n.code:
-            new[a - BASE:a - BASE + len(old)] = code if key in tweaks else old
+            new[a - BASE:a - BASE + len(old)] = code if named else old
     new = bytes(new)
-    if _analyse(new) != (True, tuple(k for k in TWEAKS if k in tweaks), {k: chosen.get(k, n.default) for k, n in NAMES.items() if k in tweaks}):
+    known, on, held = _analyse(new)
+    if not known or on != tuple(k for k in TWEAKS if k in tweaks) or any(held.get(k) != v for k, v in chosen.items()):
         raise OpError("The new dongle firmware doesn't match its known checksum. Nothing was written.")
     return new
 

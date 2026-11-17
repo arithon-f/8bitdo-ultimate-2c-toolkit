@@ -440,7 +440,7 @@ class WebTest(unittest.TestCase):
         self.assertEqual(data["recipes"], ["bt_xbox", "cable_360"])
         self.assertIn("Xbox Series X|S controller over Bluetooth", " ".join(data["titles"]))
         self.assertEqual(data["names"], {"bt_xbox": {"label": "Bluetooth name", "default": "8BitDo Ultimate 2C (X/S)", "max": 27, "held": "8BitDo Ultimate 2C (X/S)"},
-                                         "cable_360": {"label": "Name over cable", "default": "8BitDo Ultimate 2C (Wired)", "max": 38, "held": "8BitDo Ultimate 2C (Wired)"}})
+                                         "cable_360": {"label": "Name over cable", "default": "8BitDo Ultimate 2C Wireless Controller", "max": 38, "held": "8BitDo Ultimate 2C Wireless Controller"}})
         self.assertEqual((data["version"], data["version_from"]), (1.09, "update record"))
         self.assertEqual((data["pending"], data["boot_identity"]), (False, None))
         self.assertEqual([(t["key"], t["on"]) for t in data["tweaks"]],
@@ -489,9 +489,9 @@ class WebTest(unittest.TestCase):
                                 "known": True, "version": 1.03,
                                 "tweaks": [{"key": "dongle_360", "title": "Xbox 360 controller over 2.4 GHz", "on": True},
                                            {"key": "dongle_dinput", "title": "D-input mode with B + Home", "on": False}],
-                                "names": {"dongle_360": {"label": "X-input name", "default": "8BitDo Ultimate 2C (Xbox 360)", "max": 38,
+                                "names": {"dongle_360": {"label": "X-input name", "default": "8BitDo Ultimate 2C Wireless Controller", "max": 38,
                                                          "held": "8BitDo Ultimate 2C Wireless Controller"},   # installed before names
-                                          "dongle_dinput": {"label": "D-input name", "default": "8BitDo Ultimate 2C (D-input)", "max": 36, "held": None}}})
+                                          "dongle_dinput": {"label": "D-input name", "default": "8BitDo Ultimate 2C Wireless Controller", "max": 36, "held": None}}})
 
     def test_a_dongle_left_in_update_mode_is_named_and_its_backup_offered(self):
         from tests.test_dongle import STOCK, K as DK, flash, World

@@ -45,15 +45,23 @@ let st = null, fw = null, reading = false, busy = false, base = "backup";
 const tweakBoxes = () => [...document.querySelectorAll(".tweak")];
 const dongleBoxes = () => [...document.querySelectorAll(".dongle-tweak")];
 const dongleNameBoxes = () => [...document.querySelectorAll(".dname")];
-const dongleNames = () => Object.fromEntries(dongleNameBoxes().filter((b) => dongleTweaks().includes(b.dataset.for)).map((b) => [b.dataset.for, b.value.trim() || b.dataset.default]));
+// A name is sent only when chosen: a box left empty keeps the name installed now, and emptying one that showed a chosen name
+// sends "", which puts 8BitDo's back.
+const chosenNames = (boxes, on) => Object.fromEntries(boxes.filter((b) => on.includes(b.dataset.for) && (b.value.trim() || b.dataset.held))
+  .map((b) => [b.dataset.for, b.value.trim()]));
+const dongleNames = () => chosenNames(dongleNameBoxes(), dongleTweaks());
 const RING_NAMES = { ring_normal: "normal", ring_25: "25 %", ring_5: "5 %", ring_1: "1 %", ring_0_1: "0.1 %", ring_off: "off" };
 let ringKept = "", dongleRead = null;  // the Home ring level installed, kept by the next install; a level saved from Settings overrides it at power-on
 const RING_CODE_USERS = ["battery_alerts", "settings", "fixes", "stick_precision", "cpu_rest"];
 const needsRingCode = () => tweakBoxes().some((x) => RING_CODE_USERS.includes(x.value) && x.checked);
 const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval", ...(t.includes("cpu_rest") ? ["battery_log"] : [])] : t; };  // every install asks for 12.5 ms; with Processor rest, it keeps the battery log
 const nameBoxes = () => [...document.querySelectorAll(".tname")];
-const nameOf = (box) => box.value.trim() || box.dataset.default;   // an empty box keeps the default
-const names = () => Object.fromEntries(nameBoxes().filter((b) => tweaks().includes(b.dataset.for)).map((b) => [b.dataset.for, nameOf(b)]));
+const showHeld = (b) => {   // the name the firmware holds goes in its box only when someone chose it
+  const n = (fw && fw.names || {})[b.dataset.for], held = n && n.held && n.held !== b.dataset.default ? n.held : "";
+  b.dataset.held = held; b.value = held;
+};
+const nameOf = (box) => box.value.trim() || (box.dataset.held ? box.dataset.default : box.placeholder);   // what it will be called
+const names = () => chosenNames(nameBoxes(), tweaks());
 const tweakTitles = () => [...tweakBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent
     + (nameBoxes().some((b) => b.dataset.for === x.value) ? `: “${nameOf(nameBoxes().find((b) => b.dataset.for === x.value))}”` : "")),
   ...(ringKept || needsRingCode() ? [`Home ring: ${RING_NAMES[ringKept || "ring_normal"]}`] : [])];
@@ -149,7 +157,7 @@ function render() {
   $("ctrl-tweaks").hidden = $("tweaks-opts").hidden = dongleOnly; $("dongle-tweaks").hidden = !dongleOnly;
   if (isDongleFw && fw !== dongleRead) {   // each read starts from what's installed
     dongleRead = fw; dongleBoxes().forEach((x) => (x.checked = x.defaultChecked = fw.tweaks.some((t) => t.key === x.value && t.on)));
-    dongleNameBoxes().forEach((b) => { const n = (fw.names || {})[b.dataset.for]; b.value = n && n.held && n.held !== b.dataset.stock ? n.held : b.dataset.default; });   // the name installed, else the default to edit
+    dongleNameBoxes().forEach(showHeld);   // a chosen name shows in its box; 8BitDo's leaves it empty
   }
   dongleBoxes().forEach((x) => { x.disabled = busy || !dongleReady; x.closest(".tw").classList.toggle("off", x.disabled); });
   dongleNameBoxes().forEach((b) => { const on = dongleBoxes().find((x) => x.value === b.dataset.for); b.hidden = !on.checked; b.disabled = on.disabled; });
@@ -333,7 +341,7 @@ function matchInstalled() {  // start from what's installed, so installing doesn
   matched = key;
   tweakBoxes().forEach((x) => (x.checked = fw.recipes.includes(x.value)));
   ringKept = fw.recipes.find((k) => k in RING_NAMES) || "";
-  nameBoxes().forEach((b) => { const n = (fw.names || {})[b.dataset.for]; b.value = n && n.held && n.held !== b.dataset.stock ? n.held : b.dataset.default; });   // the name installed, else the default to edit (8BitDo's own cable name was never chosen)
+  nameBoxes().forEach(showHeld);
 }
 
 let fwSeq = 0;
@@ -406,7 +414,7 @@ const dongleTweaks = () => dongleBoxes().filter((x) => x.checked).map((x) => x.v
 $("patch-dry").onclick = () => runJob("Checking…", "/api/patch", onDongle() ? { tweaks: dongleTweaks(), names: dongleNames(), base, write: false } : { tweaks: tweaks(), names: names(), base, write: false }, "Check passed");
 $("patch-write").onclick = async () => {
   if (onDongle()) {
-    const chosen = dongleBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent + (x.value in dongleNames() ? `: “${dongleNames()[x.value]}”` : ""));
+    const chosen = dongleBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent + (dongleNames()[x.value] ? `: “${dongleNames()[x.value]}”` : ""));
     if (await ask("Install this on the dongle?", "This changes the dongle's firmware. The app restarts the dongle into update mode to write it, then restarts it again. Installing modified firmware probably voids the dongle's warranty.",
       chosen.length ? chosen : ["No tweaks: the original firmware 1.03"], "Install", "install"))
       runJob("Installing…", "/api/patch", { tweaks: dongleTweaks(), names: dongleNames(), write: true }, "Installed on the dongle");

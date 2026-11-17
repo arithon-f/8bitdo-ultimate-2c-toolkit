@@ -117,6 +117,14 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, 0, text)
         self.assertEqual(recipes.identify(bytes(dev.f[0x6000:0x18400]), **K).names, {"bt_xbox": "My Pad", "cable_360": "My Pad (USB)"})
         self.assertIn("Bluetooth name: “My Pad”. Name over cable: “My Pad (USB)”.", text)
+        bank = lambda: bytes(dev.f[0x6000:0x18400])
+        code, text = run(["patch", "--tweaks", "bt_xbox,cable_360,dim_leds", "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 0, text)   # reinstalling without names keeps the ones chosen
+        self.assertEqual(recipes.identify(bank(), **K).names, {"bt_xbox": "My Pad", "cable_360": "My Pad (USB)"})
+        code, text = run(["patch", "--tweaks", "bt_xbox,cable_360", "--bt-name", "", "--cable-name", "", "--write", "--store", str(self.tmp)],
+                         [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 0, text)   # "" puts the defaults back
+        self.assertEqual(recipes.identify(bank(), **K).names, {"bt_xbox": recipes.NAME.decode(), "cable_360": recipes.STOCK_CABLE_NAME})
 
     def test_a_name_needs_its_tweak_and_must_be_text(self):
         state.accept(self.tmp)
