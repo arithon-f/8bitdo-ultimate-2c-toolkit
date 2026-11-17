@@ -88,6 +88,36 @@ class ControllerNameTest(unittest.TestCase):
         self.assertEqual(self.built[self.GATT:self.GATT + len(self.NEW)], self.NEW)
         self.assertEqual(self.built[self.SCAN:self.SCAN + len(self.NEW)], self.NEW)
 
+    def test_a_chosen_bluetooth_name_goes_everywhere_the_name_and_its_length_live(self):
+        img = recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "My Pad"}, **self.k)
+        at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
+        self.assertEqual(at(0x172DC, 27), b"My Pad".ljust(27, b"\0"))                    # GATT device name
+        self.assertEqual(at(0x17488, 4), (6).to_bytes(4, "little"))                      # ... its length
+        self.assertEqual(at(0x17254, 29), bytes([7, 9]) + b"My Pad".ljust(27, b"\0"))    # scan response
+        self.assertEqual(at(0xA214, 2), bytes([8, 0xA1]))                                # ... its length: movs r1, #8
+        st = recipes.identify(img, **self.k)
+        self.assertEqual((st.recipes, st.names), (("bt_xbox",), {"bt_xbox": "My Pad"}))
+        self.assertEqual(recipes.identify(self.built, **self.k).names, {"bt_xbox": "8BitDo Ultimate 2C (X/S)"})
+        self.assertEqual(recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "8BitDo Ultimate 2C (X/S)"}, **self.k), self.built)
+
+    def test_names_are_only_printable_text_of_the_slots_length(self):
+        for bad in ("", "x" * 28, " lead", "trail ", "tab\there", "caf\u00e9", 7):
+            with self.assertRaises(RecipeError, msg=repr(bad)):
+                recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": bad}, **self.k)
+        recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "x" * 27}, **self.k)
+        with self.assertRaises(RecipeError):   # a name only for a tweak being installed, and one that has a name
+            recipes.build(self.stock, ["bt_xbox"], names={"cable_360": "x"}, **self.k)
+        with self.assertRaises(RecipeError):
+            recipes.build(self.stock, ["bt_xbox", "dim_leds"], names={"dim_leds": "x"}, **self.k)
+
+    def test_a_name_whose_copies_disagree_makes_the_image_unknown(self):
+        img = bytearray(recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "My Pad"}, **self.k))
+        img[0xA214 - image.BASE] = 9   # the scan response's length no longer the name's
+        self.assertFalse(recipes.identify(bytes(img), **self.k).known)
+        img = bytearray(recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "My Pad"}, **self.k))
+        img[0x172DC - image.BASE + 20] = 0x41   # something after the name's end
+        self.assertFalse(recipes.identify(bytes(img), **self.k).known)
+
     def test_a_controller_with_the_old_name_is_still_recognised(self):
         st = recipes.identify(self.with_old_name(self.built, self.GATT, self.SCAN), **self.k)
         self.assertEqual((st.known, st.recipes), (True, ("bt_xbox",)))
@@ -376,6 +406,30 @@ class FromEarlierVersionsTest(unittest.TestCase):
         html = (Path(recipes.__file__).parents[1] / "web" / "static" / "index.html").read_text()
         self.assertIn('value="bt_rumble_long">', html)
 
+    def test_a_cable_name_is_chosen_with_the_xbox_360_tweak(self):
+        plain = recipes.build(self.stock, ["cable_360"], names={"cable_360": "Q"}, **self.k)
+        img = recipes.build(self.stock, ["cable_360"], **self.k)   # the default
+        at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
+        name = "8BitDo Ultimate 2C (Wired)"
+        n = 2 + 2 * len(name)
+        self.assertEqual(at(0x1792C, 2), bytes([n, 3]))                       # a string descriptor of 54 bytes
+        self.assertEqual(at(0x1792C + 2, n - 2).decode("utf-16-le"), name)
+        self.assertEqual(at(0x1792C + n, 0x4E - n), bytes(0x4E - n))           # the rest of 8BitDo's 78-byte name, cleared
+        self.assertEqual(at(0xE91C, 1), bytes([n]))                           # movs r3, #n: the length it's sent with
+        self.assertEqual([i + image.BASE for i in range(len(img)) if img[i] != plain[i]][:1], [0xE91C])   # nothing else differs
+        st = recipes.identify(img, **self.k)
+        self.assertEqual((st.recipes, st.names), (("cable_360",), {"cable_360": name}))
+        img = recipes.build(self.stock, ["cable_360"], names={"cable_360": "Z" * 38}, **self.k)
+        self.assertEqual(img[0x1792C - image.BASE:0x1792C - image.BASE + 78], bytes([78, 3]) + "Z".encode("utf-16-le") * 38)
+        self.assertEqual(recipes.identify(img, **self.k).names, {"cable_360": "Z" * 38})
+        with self.assertRaises(RecipeError):
+            recipes.build(self.stock, ["cable_360"], names={"cable_360": "Z" * 39}, **self.k)
+
+    def test_the_app_offers_a_name_by_cable_under_the_xbox_360_switch(self):
+        html = (Path(recipes.__file__).parents[1] / "web" / "static" / "index.html").read_text()
+        self.assertIn('data-for="cable_360"', html)
+        self.assertNotIn('value="cable_name"', html)
+
     def test_fast_scan_halves_the_scan_period_and_keeps_home_and_turbo_timings(self):
         img = recipes.build(self.stock, ["fast_scan"], **self.k)
         at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
@@ -485,6 +539,19 @@ class RealStockTest(unittest.TestCase):
     def test_all_combinations_identify(self):
         for keys in VALID + [[r] for r in RING] + [KEYS + [r] for r in RING]:
             self.assertEqual(recipes.identify(recipes.build(self.stock, keys)).recipes, tuple(sorted(keys)))
+
+    def test_names_equal_to_8bitdos_own_still_identify(self):
+        # 8BitDo's Bluetooth name, chosen with the Xbox tweak, writes 8BitDo's bytes in some of its places: still the tweak
+        img = recipes.build(self.stock, ["bt_xbox", "cable_360"], names={"bt_xbox": "8BitDo Ultimate 2C Wireless"})
+        st = recipes.identify(img)
+        self.assertEqual((st.known, st.recipes, st.names["bt_xbox"]), (True, ("bt_xbox", "cable_360"), "8BitDo Ultimate 2C Wireless"))
+        # the Xbox 360 tweak as earlier versions installed it, with 8BitDo's cable name, is still that tweak
+        img = recipes.build(self.stock, ["cable_360"], names={"cable_360": recipes.STOCK_CABLE_NAME})
+        self.assertEqual(img[0x1792C - image.BASE:0x1792C - image.BASE + 0x4E], self.stock[0x1792C - image.BASE:0x1792C - image.BASE + 0x4E])
+        self.assertEqual(img[0xE91C - image.BASE], self.stock[0xE91C - image.BASE])
+        self.assertEqual((recipes.identify(img).recipes, recipes.identify(img).names), (("cable_360",), {"cable_360": recipes.STOCK_CABLE_NAME}))
+        self.assertEqual(recipes.identify(recipes.build(self.stock, ["cable_360"])).names, {"cable_360": "8BitDo Ultimate 2C (Wired)"})
+        self.assertEqual(recipes.identify(self.stock).names, {})
 
 
 if __name__ == "__main__":

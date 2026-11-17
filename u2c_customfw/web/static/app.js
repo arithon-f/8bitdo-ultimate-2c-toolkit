@@ -44,12 +44,18 @@ let st = null, fw = null, reading = false, busy = false, base = "backup";
 
 const tweakBoxes = () => [...document.querySelectorAll(".tweak")];
 const dongleBoxes = () => [...document.querySelectorAll(".dongle-tweak")];
+const dongleNameBoxes = () => [...document.querySelectorAll(".dname")];
+const dongleNames = () => Object.fromEntries(dongleNameBoxes().filter((b) => dongleTweaks().includes(b.dataset.for)).map((b) => [b.dataset.for, b.value.trim() || b.dataset.default]));
 const RING_NAMES = { ring_normal: "normal", ring_25: "25 %", ring_5: "5 %", ring_1: "1 %", ring_0_1: "0.1 %", ring_off: "off" };
 let ringKept = "", dongleRead = null;  // the Home ring level installed, kept by the next install; a level saved from Settings overrides it at power-on
 const RING_CODE_USERS = ["battery_alerts", "settings", "fixes", "stick_precision", "cpu_rest"];
 const needsRingCode = () => tweakBoxes().some((x) => RING_CODE_USERS.includes(x.value) && x.checked);
 const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval", ...(t.includes("cpu_rest") ? ["battery_log"] : [])] : t; };  // every install asks for 12.5 ms; with Processor rest, it keeps the battery log
-const tweakTitles = () => [...tweakBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent),
+const nameBoxes = () => [...document.querySelectorAll(".tname")];
+const nameOf = (box) => box.value.trim() || box.dataset.default;   // an empty box keeps the default
+const names = () => Object.fromEntries(nameBoxes().filter((b) => tweaks().includes(b.dataset.for)).map((b) => [b.dataset.for, nameOf(b)]));
+const tweakTitles = () => [...tweakBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent
+    + (nameBoxes().some((b) => b.dataset.for === x.value) ? `: “${nameOf(nameBoxes().find((b) => b.dataset.for === x.value))}”` : "")),
   ...(ringKept || needsRingCode() ? [`Home ring: ${RING_NAMES[ringKept || "ring_normal"]}`] : [])];
 
 function lastBackup(names) {  // controller-YYYYMMDD-HHMMSS….bin, oldest first
@@ -139,11 +145,14 @@ function render() {
   if (!xbox.checked) rumble.checked = false;
   if (!rumble.checked) long.checked = false;
   tweakBoxes().forEach((x) => { x.disabled = busy || (x === rumble && !xbox.checked) || (x === long && !rumble.checked); x.parentElement.classList.toggle("off", x.disabled); });
+  nameBoxes().forEach((b) => { const on = tweakBoxes().find((x) => x.value === b.dataset.for); b.hidden = !on.checked; b.disabled = busy; });
   $("ctrl-tweaks").hidden = $("tweaks-opts").hidden = dongleOnly; $("dongle-tweaks").hidden = !dongleOnly;
   if (isDongleFw && fw !== dongleRead) {   // each read starts from what's installed
     dongleRead = fw; dongleBoxes().forEach((x) => (x.checked = x.defaultChecked = fw.tweaks.some((t) => t.key === x.value && t.on)));
+    dongleNameBoxes().forEach((b) => { const n = (fw.names || {})[b.dataset.for]; b.value = n && n.held && n.held !== b.dataset.stock ? n.held : b.dataset.default; });   // the name installed, else the default to edit
   }
   dongleBoxes().forEach((x) => { x.disabled = busy || !dongleReady; x.closest(".tw").classList.toggle("off", x.disabled); });
+  dongleNameBoxes().forEach((b) => { const on = dongleBoxes().find((x) => x.value === b.dataset.for); b.hidden = !on.checked; b.disabled = on.disabled; });
   $("dongle-note").hidden = !paired;
   const installWhy = dongleOnly ? (paired ? "Turn the controller off so the dongle is connected on its own." : "") : !tweaks().length ? "Choose at least one tweak." : !fw || fw.known !== false || on109 ? ""
     : fw.version ? "This app only installs tweaks over firmware 1.09." : "This firmware can't be identified. Restore your backup first.";
@@ -318,12 +327,13 @@ async function refresh() {
 
 let matched = "";
 function matchInstalled() {  // start from what's installed, so installing doesn't drop a tweak by surprise; the person's choices stay until other firmware is read
-  const key = fw && fw.known && fw.recipes ? fw.recipes.join() : "";
+  const key = fw && fw.known && fw.recipes && fw.recipes.length ? fw.recipes.join() + JSON.stringify(fw.names || {}) : "";   // a new name installed reads again too; the original firmware keeps the suggestions
   if (fw && fw.known && fw.recipes && !fw.recipes.length) ringKept = "";   // the original firmware has no ring level to keep
   if (!key || key === matched) return;
   matched = key;
   tweakBoxes().forEach((x) => (x.checked = fw.recipes.includes(x.value)));
   ringKept = fw.recipes.find((k) => k in RING_NAMES) || "";
+  nameBoxes().forEach((b) => { const n = (fw.names || {})[b.dataset.for]; b.value = n && n.held && n.held !== b.dataset.stock ? n.held : b.dataset.default; });   // the name installed, else the default to edit (8BitDo's own cable name was never chosen)
 }
 
 let fwSeq = 0;
@@ -356,6 +366,8 @@ document.querySelectorAll("[data-help]").forEach((b) => (b.onclick = () => showH
 $("help-open").onclick = () => { showHelp(tab === "firmware" ? (onDongle() ? "dongle" : "start") : tab); $("help").showModal(); };  // opens on the tab in view
 $("help-close").onclick = () => $("help").close();
 tweakBoxes().forEach((x) => (x.onchange = render));
+nameBoxes().forEach((b) => b.addEventListener("click", (e) => e.stopPropagation()));   // typing in the box leaves its switch alone
+dongleBoxes().forEach((x) => (x.onchange = render));   // its name box shows with it
 function popover(button, ...content) {  // a small pop-up under an (i) button, outside any label so clicks in it toggle nothing
   const pop = document.createElement("div");
   pop.id = `pop-${document.querySelectorAll(".pop").length}`; pop.className = "pop"; pop.popover = "auto"; pop.append(...content);
@@ -391,17 +403,17 @@ const onDongle = () => !!fw && fw.device === "dongle";
 const restarts = () => (st && st.devices.some((d) => d.mode === "boot") ? "The app restarts the controller afterwards."
   : "The app restarts the controller into update mode to write it, then restarts it again.");
 const dongleTweaks = () => dongleBoxes().filter((x) => x.checked).map((x) => x.value);
-$("patch-dry").onclick = () => runJob("Checking…", "/api/patch", { tweaks: onDongle() ? dongleTweaks() : tweaks(), base, write: false }, "Check passed");
+$("patch-dry").onclick = () => runJob("Checking…", "/api/patch", onDongle() ? { tweaks: dongleTweaks(), names: dongleNames(), base, write: false } : { tweaks: tweaks(), names: names(), base, write: false }, "Check passed");
 $("patch-write").onclick = async () => {
   if (onDongle()) {
-    const chosen = dongleBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent);
+    const chosen = dongleBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent + (x.value in dongleNames() ? `: “${dongleNames()[x.value]}”` : ""));
     if (await ask("Install this on the dongle?", "This changes the dongle's firmware. The app restarts the dongle into update mode to write it, then restarts it again. Installing modified firmware probably voids the dongle's warranty.",
       chosen.length ? chosen : ["No tweaks: the original firmware 1.03"], "Install", "install"))
-      runJob("Installing…", "/api/patch", { tweaks: dongleTweaks(), write: true }, "Installed on the dongle");
+      runJob("Installing…", "/api/patch", { tweaks: dongleTweaks(), names: dongleNames(), write: true }, "Installed on the dongle");
     return;
   }
   if (await ask("Install these tweaks?", `This changes the controller's firmware. ${restarts()} Installing modified firmware probably voids the controller\'s warranty.`, tweakTitles(), "Install", "install"))
-    runJob("Installing…", "/api/patch", { tweaks: tweaks(), base, write: true }, "Tweaks installed");
+    runJob("Installing…", "/api/patch", { tweaks: tweaks(), names: names(), base, write: true }, "Tweaks installed");
 };
 $("restore-backup-dry").onclick = () => runJob("Checking…", "/api/restore", { source: "backup", backup: fw.restore_backup.name, write: false }, "Check passed");
 $("restore-stock-dry").onclick = () => runJob("Checking…", "/api/restore", { source: "stock", write: false }, "Check passed");

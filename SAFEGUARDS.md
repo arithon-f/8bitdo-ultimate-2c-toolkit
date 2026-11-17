@@ -11,6 +11,7 @@ These are the checks the app makes before and while it writes to the controller 
 - **A pending update.** If the controller has a firmware update pending, the app refuses to install the tweaks.
 - **Never the dongle.** The controller's steps never write to the dongle. The app tells them apart by the bootloader's identity, the USB version and how the flash reads back.
 - **Checked edits.** Each tweak is a set of byte edits to the original firmware 1.09, and every edit checks the original bytes it replaces before writing.
+- **Names are only text.** The Bluetooth name and the name over cable are the only bytes you choose. Each must be 1 to 27 (Bluetooth) or 38 (cable) printable ASCII characters, goes only into the places that hold that name and its length, which are written from it, and is read back as installed only when all of them agree. Everything else is still checked byte for byte.
 - **Restoring 8BitDo's 1.09.** The original firmware is downloaded from 8BitDo's update server, only when you ask, and checked against its known SHA-256. The app only restores it if the controller really is on 1.09, which it reads from the update record or, if that is blank, identifies by the hash of bank A or bank B. If the version can't be determined, it refuses.
 - **Update mode only to write.** *Check First* reads the controller by cable and leaves it running. To write, the app first checks that the device isn't the dongle, then puts the controller in update mode and checks everything again there, through the bootloader, before it erases anything. After a verified write, it restarts the controller into its new firmware.
 - **An interrupted write.** If a write stops after erasing, the controller stays in update mode, the app says so, and Restore still works there. Unplugging the cable doesn't leave update mode; holding Home for about 12 seconds with the cable out does.
@@ -19,6 +20,7 @@ These are the checks the app makes before and while it writes to the controller 
 ## The dongle
 
 - **A backup of the same dongle.** A write needs a backup of that very dongle: its bootloader and its calibration must match.
+- **Names are only text.** The dongle's names in X-input and D-input are the only bytes you choose: 1 to 38 or 36 printable ASCII characters, written only where that name and its length live, and read back as installed only when they agree. Everything else is checked against 8BitDo's 1.03 by hash.
 - **Only the firmware.** The app only rewrites the firmware (`0x6000`-`0x10000`), and writes the app header last. It never writes the update record, the second firmware copy, the calibration or the licence sector.
 - **Update mode is checked.** The app puts the dongle in update mode by itself, and checks there that its update-mode code and calibration match the backup before it erases anything. After writing, it reads the firmware back and restarts the dongle.
 - **An interrupted write.** If a write stops before the header is written, the dongle stays in update mode, the app says so, and Restore still works.
