@@ -650,3 +650,28 @@ class OrphanTest(unittest.TestCase):
         exited = []
         server.exit_when_orphaned(Busy(), stdin=io.StringIO("anything\n"), wait=0, exit=exited.append)
         self.assertEqual((len(checks), exited), (3, [0]))
+
+
+class ShutdownTest(unittest.TestCase):
+    def test_ctrl_c_closes_server_without_traceback(self):
+        httpd = mock.MagicMock()
+        httpd.server_address = ("127.0.0.1", 41941)
+        httpd.serve_forever.side_effect = KeyboardInterrupt
+        httpd.runner.running = False
+        with mock.patch.object(server, "make_server", return_value=(httpd, "token")):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                server.serve(Path("/unused"))
+        self.assertIn("Stopping WebUI...", output.getvalue())
+        httpd.server_close.assert_called_once_with()
+
+    def test_ctrl_c_waits_for_active_firmware_job(self):
+        httpd = mock.MagicMock()
+        httpd.server_address = ("127.0.0.1", 41941)
+        httpd.serve_forever.side_effect = KeyboardInterrupt
+        httpd.runner.running = True
+        with mock.patch.object(server, "make_server", return_value=(httpd, "token")):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                server.serve(Path("/unused"))
+        self.assertIn("Waiting for the current operation to finish...", output.getvalue())
+        httpd.runner.cond.wait_for.assert_called_once()
+        httpd.server_close.assert_called_once_with()

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The controller test: shows what macOS's GameController reports, through the Mac app's native bridge
+// The controller test: on macOS shows what GameController reports, through the Mac app's native bridge
 // (macos/Diagnostics.swift). It sends the bridge {op} messages and receives window.u2cDiagnostics(event).
 const CONTROLS = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "L3", "R3", "View", "Menu", "Home", "Up", "Down", "Left", "Right", "LS", "RS"];  // as Diagnostics.swift names them
 const CONTROL_LABELS = { L3: "Left stick press", R3: "Right stick press", View: "− (Select)", Menu: "+ (Start)", Up: "D-pad up", Down: "D-pad down", Left: "D-pad left", Right: "D-pad right", LS: "Left stick", RS: "Right stick" };  // as printed on the controller
@@ -7,7 +7,48 @@ const STICK_SEEN = 0.5, TRIGGER_SEEN = 0.1, STICK_TRAVEL = 7, RESULT_TIMEOUT_MS 
 const IDLE_LINE = "Vibrates for under a second. Nothing is written to the controller.";
 
 let testVisible = false, testConnected = null, testState = null, testSeen = new Set(), testName = null, testMounted = null, testPending = null, testTimer = null, testId = 0;
-const bridge = () => window.u2cSimBridge || (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.diagnostics);  // the simulator's, then the Mac app's
+// On Linux, poll evdev input and use a separate authenticated endpoint for bounded force feedback. Retain macOS native bridge.
+let linuxPoll = null, linuxLastConnected = false, linuxTickBusy = false;
+const linuxBridge = { postMessage(m) {
+  if (m.op === "start") {
+    if (linuxPoll) clearInterval(linuxPoll);
+    linuxPoll = setInterval(linuxTick, 70);
+    linuxTick();
+  } else if (m.op === "stop") {
+    clearInterval(linuxPoll); linuxPoll = null; linuxLastConnected = false;
+  } else if (m.op === "vibrate") {
+    fetch("/api/linux-gamepad/rumble", { method: "POST", headers: { "X-Token": token, "Content-Type": "application/json" }, body: JSON.stringify({ locality: m.locality }) })
+      .then(async response => { const data = await response.json(); window.u2cDiagnostics({ type: "result", id: m.id, ok: !!data.ok, error: data.error }); })
+      .catch(error => window.u2cDiagnostics({ type: "result", id: m.id, ok: false, error: String(error) }));
+  } else if (m.op === "direct") {
+    window.u2cDiagnostics({ type: "result", id: m.id, ok: false, error: "Direct Bluetooth reports are not supported by Linux diagnostics." });
+  }
+}};
+async function linuxTick() {
+  if (!testVisible || !linuxPoll || linuxTickBusy) return;
+  linuxTickBusy = true;
+  try {
+    const response = await fetch("/api/linux-gamepad", { headers: { "X-Token": token } });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const e = await response.json();
+    if (e.type === "state") {
+      linuxLastConnected = !!e.connected;
+      window.u2cDiagnostics(e);
+    } else if (e.type === "input") {
+      if (!linuxLastConnected) {
+        linuxLastConnected = true;
+        window.u2cDiagnostics({ ...e, type: "state" });
+      }
+      window.u2cDiagnostics(e);
+    }
+  } catch (error) {
+    if (linuxLastConnected) window.u2cDiagnostics({ type: "state", connected: false });
+    linuxLastConnected = false;
+  } finally {
+    linuxTickBusy = false;
+  }
+}
+const bridge = () => window.u2cSimBridge || (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.diagnostics) || (navigator.platform.startsWith("Linux") ? linuxBridge : null);  // the simulator's, then the Mac app's
 
 function clearPending() {
   clearTimeout(testTimer);
@@ -49,8 +90,8 @@ const TEST_MESSAGES = {
   busy: "The controller test is unavailable while a task is running.",
   boot: "The controller test can't run in update mode. Disconnect the controller and connect it again by Bluetooth or cable.",
   none: "No controller found. Connect the controller by Bluetooth or cable to test it.",
-  noext: "macOS sees this controller, but not as a standard gamepad, so its controls can't be tested here.",
-  background: "The controller test is paused, because macOS only sends controller input to the app in front.",
+  noext: "The system sees this controller, but not as a standard gamepad, so its controls can't be tested here.",
+  background: "The controller test is paused, because The system only sends controller input to the app in front.",
 };
 
 function diagnosticsRender() {
@@ -75,7 +116,7 @@ const directLine = () => directAvailable() ? IDLE_LINE
   : "The direct report only works over Bluetooth.";
 
 function batteryText(b) {  // macOS defaults to level 0 and an unknown state when it has nothing to report
-  if (!b || b.level < 0 || (b.state === "unknown" && b.level === 0)) return "macOS doesn't report the battery for this controller";
+  if (!b || b.level < 0 || (b.state === "unknown" && b.level === 0)) return "The system does not report the battery for this controller";
   if (b.state === "full") return "Full";
   return `${Math.round(b.level * 100)} %${b.state === "charging" ? ", charging" : ""}`;
 }
@@ -94,7 +135,7 @@ function mountLive(body) {
   const s = testState, has = (l) => s.localities.includes(l), direct = directAvailable();
   const button = (op, label, ok) => `<button class="sec small" data-op="${op}" data-was="${ok ? "" : "1"}"${ok && !testPending ? "" : " disabled"}>${label}</button>`;
   body.innerHTML = `<div class="test"><div class="test-pic" id="test-pic">${pad(ACCENT, false, "test-g")}</div><div>
-    <dl class="rows"><dt>macOS sees</dt><dd id="test-name"></dd><dt>Category</dt><dd id="test-category"></dd><dt>Vibration</dt><dd id="test-vibration"></dd><dt>Battery</dt><dd id="test-battery"></dd></dl>
+    <dl class="rows"><dt>System sees</dt><dd id="test-name"></dd><dt>Category</dt><dd id="test-category"></dd><dt>Vibration</dt><dd id="test-vibration"></dd><dt>Battery</dt><dd id="test-battery"></dd></dl>
     <div class="rum">${button("default", "Vibrate Like a Game", has("default"))}${button("left", "Left Motor", has("left"))}${button("right", "Right Motor", has("right"))}${button("direct", "Direct Report", direct)}</div>
     <p class="res" id="test-res"></p></div></div>
     <p class="count" id="test-count"></p>

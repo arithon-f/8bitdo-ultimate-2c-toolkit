@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Device access: the only OS-specific part. A port adds a module with list_devices() and open_channel()."""
+"""Device access: the only OS-specific part."""
 import sys
 from dataclasses import dataclass
 from typing import Protocol
@@ -13,23 +13,25 @@ class DeviceInfo:
     transport: str
     name: str
     handle: object
-    version: int = 0   # bcdDevice
+    version: int = 0
 
 
 class Channel(Protocol):
     def xfer(self, report: bytes, timeout: float = 0.5, accept=None) -> bytes | None: ...
-
     def close(self) -> None: ...
 
 
 class PermissionDenied(Exception):
-    """The OS refused to open the device (macOS: Input Monitoring not granted)."""
+    """The OS refused to open the device."""
 
 
 def _backend():
     if sys.platform == "darwin":
         from . import iokit
         return iokit
+    if sys.platform.startswith("linux"):
+        from . import linux
+        return linux
     raise NotImplementedError(f"no transport for {sys.platform}: see docs/porting.md")
 
 
@@ -38,5 +40,5 @@ def list_devices() -> list[DeviceInfo]:
 
 
 def open_channel(dev: DeviceInfo, report_id: int) -> Channel:
-    """report_id 0x81 for the controller's update channel, 0 for the bootloader (no report IDs)."""
+    """report_id 0x81 for the controller's update channel, 0 for the bootloader."""
     return _backend().open_channel(dev, report_id)

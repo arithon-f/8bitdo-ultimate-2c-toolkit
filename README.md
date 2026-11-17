@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://github.com/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/releases/latest"><img src="https://img.shields.io/github/v/release/carlosbrownef-source/8bitdo-ultimate-2c-toolkit" alt="Latest release"></a>
   <a href="https://github.com/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/releases"><img src="https://img.shields.io/github/downloads/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/total" alt="Downloads"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%2013%2B-blue" alt="macOS 13 or later">
+  <img src="https://img.shields.io/badge/platform-macOS%2013%2B%20%7C%20Linux-blue" alt="macOS 13 or later">
   <img src="https://img.shields.io/github/license/carlosbrownef-source/8bitdo-ultimate-2c-toolkit" alt="GPL-3.0 license">
 </p>
 
@@ -12,7 +12,7 @@
   <img src="docs/images/diagnostics.png" alt="The Diagnostics tab, testing a controller over Bluetooth" width="420">
 </p>
 
-U2C Firmware Toolkit is a toolkit for the **8BitDo Ultimate 2C Wireless** and its **2.4 GHz dongle** on a Mac: everything they need, in one app. It makes macOS and its games treat the controller as a native one, by cable, over Bluetooth and through the dongle, adds rumble and control over its light, and lets you test it, back both up and restore them. There are no drivers or background programs, because the changes live in the controller and the dongle themselves.
+U2C Firmware Toolkit is a toolkit for the **8BitDo Ultimate 2C Wireless** and its **2.4 GHz dongle** on macOS and Linux: everything they need, in one app. It makes macOS and its games treat the controller as a native one, by cable, over Bluetooth and through the dongle, adds rumble and control over its light, and lets you test it, back both up and restore them. The firmware tweaks live in the controller and dongle themselves; on Linux, some connection modes additionally depend on system drivers (see the Linux guide).
 
 Out of the box, macOS and most Mac games see the Ultimate 2C as a generic HID device, not as a game controller. After this, they see an Xbox controller.
 
@@ -55,6 +55,10 @@ brew install carlosbrownef-source/tap/firmware-toolkit
 
 Or from source, with Python 3.12+: `python3 -m u2c_customfw.web` prints a local address to open in a browser; `python3 -m u2c_customfw --help` is the command line. The command-line tool and the Python package keep the project's first name, `u2c-customfw`.
 
+## Install (Linux)
+
+See [Linux installation, permissions, diagnostics and device support](docs/linux.md). From source, run `./install-linux.sh`, reconnect the controller or dongle, and launch `.venv/bin/python -m u2c_customfw.web`. Linux support is community-tested; platform-specific limitations are documented in the guide.
+
 ## Use
 
 The app's **Help** button explains each step and why each tweak is needed.
@@ -76,7 +80,8 @@ If something doesn't work, the [FAQ](docs/faq.md) covers the usual problems.
 - [docs/diagnostics.md](docs/diagnostics.md): the controller test, firmware details, problem reports and the battery log.
 - [docs/firmware-notes.md](docs/firmware-notes.md): flash layout, update and bootloader protocols, RAM code.
 - [docs/bluetooth-and-rumble.md](docs/bluetooth-and-rumble.md): how the Bluetooth Xbox identity and rumble work.
-- [docs/porting.md](docs/porting.md): porting the app to Linux.
+- [docs/linux.md](docs/linux.md): installing and using the toolkit on Linux.
+- [docs/porting.md](docs/porting.md): adding support for other operating systems.
 - [firmware-src/README.md](firmware-src/README.md): the C and assembly the tweaks add, and how to rebuild it.
 - [docs/releasing.md](docs/releasing.md): publishing a new version, and how the Homebrew tap follows it.
 

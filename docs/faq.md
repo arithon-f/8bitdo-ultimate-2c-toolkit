@@ -80,7 +80,7 @@ The tweaks were made for the Mac, but they live in the controller, so they go wi
 
 ### Does the app run on Linux?
 
-No, only macOS. The only part that depends on the operating system is `u2c_customfw/transport/`, and [porting.md](porting.md) explains how to port it.
+Yes. The Python CLI and WebUI run on Linux with the Linux HID/USB transport. See [linux.md](linux.md) for installation, permissions, diagnostics and tested device modes. The macOS native app remains macOS-only.
 
 ### Why are there three names?
 
