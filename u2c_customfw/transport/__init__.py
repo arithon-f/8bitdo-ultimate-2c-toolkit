@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Device access: the only OS-specific part."""
+"""Device access: the only OS-specific part. A port adds a module with list_devices() and open_channel() (macOS: iokit;
+Linux: linux, which combines hidraw and libusb)."""
 import sys
 from dataclasses import dataclass
 from typing import Protocol
@@ -13,16 +14,17 @@ class DeviceInfo:
     transport: str
     name: str
     handle: object
-    version: int = 0
+    version: int = 0   # bcdDevice
 
 
 class Channel(Protocol):
     def xfer(self, report: bytes, timeout: float = 0.5, accept=None) -> bytes | None: ...
+
     def close(self) -> None: ...
 
 
 class PermissionDenied(Exception):
-    """The OS refused to open the device."""
+    """The OS refused to open the device (macOS: Input Monitoring not granted; Linux: the udev rules aren't installed)."""
 
 
 def _backend():
@@ -40,5 +42,5 @@ def list_devices() -> list[DeviceInfo]:
 
 
 def open_channel(dev: DeviceInfo, report_id: int) -> Channel:
-    """report_id 0x81 for the controller's update channel, 0 for the bootloader."""
+    """report_id 0x81 for the controller's update channel, 0 for the bootloader (no report IDs)."""
     return _backend().open_channel(dev, report_id)

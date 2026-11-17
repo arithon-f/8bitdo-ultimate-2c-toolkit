@@ -9,6 +9,7 @@ const IDLE_LINE = "Vibrates for under a second. Nothing is written to the contro
 let testVisible = false, testConnected = null, testState = null, testSeen = new Set(), testName = null, testMounted = null, testPending = null, testTimer = null, testId = 0;
 // On Linux, poll evdev input and use a separate authenticated endpoint for bounded force feedback. Retain macOS native bridge.
 let linuxPoll = null, linuxLastConnected = false, linuxTickBusy = false;
+const SYSTEM = navigator.platform.startsWith("Linux") ? "Linux" : "macOS";   // what the texts below call the system
 const linuxBridge = { postMessage(m) {
   if (m.op === "start") {
     if (linuxPoll) clearInterval(linuxPoll);
@@ -90,8 +91,8 @@ const TEST_MESSAGES = {
   busy: "The controller test is unavailable while a task is running.",
   boot: "The controller test can't run in update mode. Disconnect the controller and connect it again by Bluetooth or cable.",
   none: "No controller found. Connect the controller by Bluetooth or cable to test it.",
-  noext: "The system sees this controller, but not as a standard gamepad, so its controls can't be tested here.",
-  background: "The controller test is paused, because The system only sends controller input to the app in front.",
+  noext: `${SYSTEM} sees this controller, but not as a standard gamepad, so its controls can't be tested here.`,
+  background: `The controller test is paused, because ${SYSTEM} only sends controller input to the app in front.`,
 };
 
 function diagnosticsRender() {
@@ -116,7 +117,7 @@ const directLine = () => directAvailable() ? IDLE_LINE
   : "The direct report only works over Bluetooth.";
 
 function batteryText(b) {  // macOS defaults to level 0 and an unknown state when it has nothing to report
-  if (!b || b.level < 0 || (b.state === "unknown" && b.level === 0)) return "The system does not report the battery for this controller";
+  if (!b || b.level < 0 || (b.state === "unknown" && b.level === 0)) return `${SYSTEM} doesn't report the battery for this controller`;
   if (b.state === "full") return "Full";
   return `${Math.round(b.level * 100)} %${b.state === "charging" ? ", charging" : ""}`;
 }
@@ -135,7 +136,7 @@ function mountLive(body) {
   const s = testState, has = (l) => s.localities.includes(l), direct = directAvailable();
   const button = (op, label, ok) => `<button class="sec small" data-op="${op}" data-was="${ok ? "" : "1"}"${ok && !testPending ? "" : " disabled"}>${label}</button>`;
   body.innerHTML = `<div class="test"><div class="test-pic" id="test-pic">${pad(ACCENT, false, "test-g")}</div><div>
-    <dl class="rows"><dt>System sees</dt><dd id="test-name"></dd><dt>Category</dt><dd id="test-category"></dd><dt>Vibration</dt><dd id="test-vibration"></dd><dt>Battery</dt><dd id="test-battery"></dd></dl>
+    <dl class="rows"><dt>${SYSTEM} sees</dt><dd id="test-name"></dd><dt>Category</dt><dd id="test-category"></dd><dt>Vibration</dt><dd id="test-vibration"></dd><dt>Battery</dt><dd id="test-battery"></dd></dl>
     <div class="rum">${button("default", "Vibrate Like a Game", has("default"))}${button("left", "Left Motor", has("left"))}${button("right", "Right Motor", has("right"))}${button("direct", "Direct Report", direct)}</div>
     <p class="res" id="test-res"></p></div></div>
     <p class="count" id="test-count"></p>
