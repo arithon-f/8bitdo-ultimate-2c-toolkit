@@ -62,7 +62,7 @@ With your controller already on 1.09, the result is the same firmware it has now
 
 ## Controller test (a separate prototype)
 
-`macos/u2w/test.swift` is a small app that only reads and shows, with no firmware code: what IOKit lists for 8BitDo devices, what GameController makes of each controller (name, category, profile, vibration, motion, battery), every button, axis and pad as it moves, and two rumble tests, through GameController and with 8BitDo's own output report (ID 5, then a stop 0.7 s later). It writes nothing to the controller's memory.
+`macos/u2w/test.swift` is a small app that only reads and shows, with no firmware code: what IOKit lists for 8BitDo devices, what GameController makes of each controller (name, category, profile, vibration, motion, battery), each of its buttons, axes and pads (green while pressed, ✓ once used), the controller's own input report with the bytes that differ from rest marked, which also shows buttons GameController doesn't map, and two rumble tests, through GameController and with 8BitDo's own output report (ID 5, then a stop 0.7 s later). It writes nothing to the controller's memory.
 
 ```sh
 macos/u2w/build-test.sh      # needs swiftc, from the Xcode command line tools

@@ -15,6 +15,10 @@ final class App: NSObject, NSApplicationDelegate {
     var seen = Set<String>()
     var engines: [CHHapticEngine] = []
     var lastNote = ""
+    var raw: [UInt32: [UInt8]] = [:]        // report ID -> the latest input report from 2dc8:6012
+    var rawRest: [UInt32: [UInt8]] = [:]    // report ID -> the first one seen, when nothing was pressed yet
+    var rawState = "Raw reports: waiting for the controller."
+    var rawManager: IOHIDManager?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -29,7 +33,7 @@ final class App: NSObject, NSApplicationDelegate {
         scroll.documentView = text
         scroll.hasVerticalScroller = true
         text.autoresizingMask = [.width]
-        let intro = NSTextField(wrappingLabelWithString: "Connect the controller over Bluetooth, keep this window in front, and press every button, move each stick and trigger. Then click Copy Report and paste it in the issue. Home may also open Apple's Games app; that's macOS.")
+        let intro = NSTextField(wrappingLabelWithString: "Connect the controller over Bluetooth and keep this window in front. Press every button and move each stick and trigger: what macOS's GameController recognises lights up in green under Inputs and gets a ✓ once it has been used; under Raw report, the bytes the controller itself sends are marked ^ while they differ from the controller at rest, which also shows buttons GameController doesn't know. Then click Copy Report and paste it in the issue. Home may also open Apple's Games app; that's macOS.")
         let buttons = NSStackView(views: [
             NSButton(title: "Vibrate with GameController", target: self, action: #selector(vibrate)),
             NSButton(title: "Vibrate with 8BitDo's Report", target: self, action: #selector(direct)),
@@ -52,6 +56,7 @@ final class App: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         GCController.startWirelessControllerDiscovery {}
+        startRaw()
         Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in self?.refresh() }
     }
 
@@ -71,6 +76,44 @@ final class App: NSObject, NSApplicationDelegate {
                           (p(d, kIOHIDTransportKey) as? String ?? "?"), n(kIOHIDPrimaryUsagePageKey), n(kIOHIDPrimaryUsageKey),
                           n(kIOHIDMaxInputReportSizeKey), n(kIOHIDMaxOutputReportSizeKey), (p(d, kIOHIDProductKey) as? String ?? ""))
         }.sorted()
+    }
+
+    // The controller's own input reports, read through IOKit (macOS asks for Input Monitoring the first time).
+    func startRaw() {
+        let m = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatching(m, [kIOHIDVendorIDKey: 0x2DC8, kIOHIDProductIDKey: 0x6012] as CFDictionary)
+        IOHIDManagerRegisterInputReportCallback(m, { ctx, _, _, _, id, report, length in
+            let me = Unmanaged<App>.fromOpaque(ctx!).takeUnretainedValue()
+            let bytes = Array(UnsafeBufferPointer(start: report, count: length))
+            if me.rawRest[id] == nil { me.rawRest[id] = bytes }
+            me.raw[id] = bytes
+        }, Unmanaged.passUnretained(self).toOpaque())
+        IOHIDManagerScheduleWithRunLoop(m, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        let r = IOHIDManagerOpen(m, IOOptionBits(kIOHIDOptionsTypeNone))
+        if r != kIOReturnSuccess {
+            rawState = "Raw reports: macOS refused (IOReturn \(String(UInt32(bitPattern: r), radix: 16))). Allow Input Monitoring for this app in System Settings › Privacy & Security, then open it again."
+        }
+        rawManager = m
+    }
+
+    func rawLines() -> [String] {
+        if raw.isEmpty { return [rawState] }
+        var out: [String] = []
+        for id in raw.keys.sorted() {
+            let b = raw[id]!, rest = rawRest[id] ?? b
+            out.append("  report \(id), \(b.count) bytes:")
+            for start in stride(from: 0, to: b.count, by: 16) {
+                let idx = Array(start..<min(start + 16, b.count))
+                out.append(String(format: "   %3d  ", start) + idx.map { String(format: "%02x", b[$0]) }.joined(separator: " "))
+                out.append("        " + idx.map { $0 < rest.count && b[$0] != rest[$0] ? "^^" : "  " }.joined(separator: " "))
+            }
+        }
+        return out
+    }
+
+    func bar(_ v: Float) -> String {   // -1...1 as a 21-character bar, centre at 0
+        let n = Int((max(-1, min(1, v)) + 1) * 10)
+        return "[" + String(repeating: "-", count: n) + "|" + String(repeating: "-", count: 20 - n) + "]"
     }
 
     func padLines(_ c: GCController) -> [String] {
@@ -95,15 +138,23 @@ final class App: NSObject, NSApplicationDelegate {
             out.append("  battery: not reported")
         }
         let prof = c.physicalInputProfile
-        var now: [String] = []
-        for (name, b) in prof.buttons where b.isPressed { now.append(name); seen.insert(name) }
-        for (name, a) in prof.axes where abs(a.value) > 0.2 { now.append(String(format: "%@ %.2f", name, a.value)); seen.insert(name) }
-        for (name, d) in prof.dpads where abs(d.xAxis.value) > 0.2 || abs(d.yAxis.value) > 0.2 {
-            now.append(String(format: "%@ %.1f,%.1f", name, d.xAxis.value, d.yAxis.value)); seen.insert(name)
+        out.append("")
+        out.append("  Inputs (\(prof.buttons.count) buttons, \(prof.axes.count) axes, \(prof.dpads.count) pads):")
+        for name in prof.buttons.keys.sorted() {
+            let b = prof.buttons[name]!
+            if b.isPressed { seen.insert(name) }
+            out.append("  \(b.isPressed ? "●" : seen.contains(name) ? "✓" : "·") \(name)\(b.isPressed ? String(format: "   PRESSED %.2f", b.value) : "")")
         }
-        out.append("  elements: \(prof.buttons.count) buttons, \(prof.axes.count) axes, \(prof.dpads.count) dpads")
-        out.append("  all buttons: \(prof.buttons.keys.sorted().joined(separator: ", "))")
-        out.append("  pressed now: \(now.sorted().joined(separator: ", "))")
+        for name in prof.axes.keys.sorted() {
+            let a = prof.axes[name]!
+            if abs(a.value) > 0.2 { seen.insert(name) }
+            out.append("  \(abs(a.value) > 0.2 ? "●" : seen.contains(name) ? "✓" : "·") \(name.padding(toLength: 26, withPad: " ", startingAt: 0)) \(bar(a.value)) \(String(format: "%+.2f", a.value))")
+        }
+        for name in prof.dpads.keys.sorted() {
+            let d = prof.dpads[name]!, moved = abs(d.xAxis.value) > 0.2 || abs(d.yAxis.value) > 0.2
+            if moved { seen.insert(name) }
+            out.append("  \(moved ? "●" : seen.contains(name) ? "✓" : "·") \(name.padding(toLength: 26, withPad: " ", startingAt: 0)) x \(bar(d.xAxis.value)) y \(bar(d.yAxis.value))")
+        }
         return out
     }
 
@@ -115,7 +166,8 @@ final class App: NSObject, NSApplicationDelegate {
         let pads = GCController.controllers()
         if pads.isEmpty { lines.append("  no controller") }
         for c in pads { lines += padLines(c) + [""] }
-        lines.append("Seen so far: \(seen.sorted().joined(separator: ", "))")
+        lines.append("Used so far: \(seen.sorted().joined(separator: ", "))")
+        lines += ["", "Raw report (the controller's own bytes, ^ = differs from rest):"] + rawLines()
         if !lastNote.isEmpty { lines += ["", lastNote] }
         return lines.joined(separator: "\n")
     }
@@ -123,7 +175,18 @@ final class App: NSObject, NSApplicationDelegate {
     func refresh() {
         guard NSApp.isActive else { return }
         let r = report()
-        if text.string != r { text.string = r }
+        guard text.string != r else { return }
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular), bold = NSFont.monospacedSystemFont(ofSize: 12, weight: .bold)
+        let out = NSMutableAttributedString()
+        for line in r.split(separator: "\n", omittingEmptySubsequences: false) {
+            let s = String(line)
+            let pressed = s.hasPrefix("  ●") || s.hasPrefix("        ") && s.contains("^")
+            out.append(NSAttributedString(string: s + "\n", attributes: [.font: pressed ? bold : font,
+                .foregroundColor: pressed ? NSColor.systemGreen : s.hasPrefix("  ✓") ? NSColor.labelColor : NSColor.secondaryLabelColor]))
+        }
+        let keep = text.enclosingScrollView?.contentView.bounds.origin
+        text.textStorage?.setAttributedString(out)
+        if let keep { text.enclosingScrollView?.contentView.scroll(to: keep) }
     }
 
     @objc func vibrate() {
@@ -167,7 +230,7 @@ final class App: NSObject, NSApplicationDelegate {
         say("The report is on the clipboard.")
     }
 
-    @objc func clear() { seen.removeAll(); lastNote = ""; status.stringValue = "" }
+    @objc func clear() { seen.removeAll(); rawRest = raw; lastNote = ""; status.stringValue = "" }
 
     func say(_ s: String) { lastNote = s; status.stringValue = s }
 }
