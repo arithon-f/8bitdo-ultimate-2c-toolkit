@@ -3,6 +3,11 @@ name: tests
 on: [push, pull_request]
 permissions:
   contents: read
+# One run per commit: a branch push, its pull request, main and a release tag of the same commit share a group, and the
+# newest replaces the others, so a release doesn't queue the same macOS job up to four times.
+concurrency:
+  group: tests-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
 jobs:
   test:
     strategy:
