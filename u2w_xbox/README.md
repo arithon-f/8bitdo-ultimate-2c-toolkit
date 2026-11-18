@@ -4,6 +4,8 @@
 
 On an Apple TV 4K (3rd generation) with tvOS 27.2.1, GameController reports the category `Xbox One` for the patched controller. It lists the haptic localities `All, Default, Handles, Left Handle, Right Handle, Left Trigger, Right Trigger, Triggers`, the battery level and `Paddle 1`–`4`. Core Haptics drives the motors. Every input maps to its Xbox element, and the four back buttons press the paddles. On macOS 27.2.1, GameController lists the same category, localities and paddles, every input except Home reaches apps, and Core Haptics drives the motors from every locality.
 
+Only Apple devices are tested. The patched controller reports product ID `045e:0b05`, the Xbox Elite Series 2 over Bluetooth Classic, with a 39-byte input report. Windows, Linux drivers such as xpadneo and hid-microsoft, and SDL games through Steam have their own handling for `0x0b05`, and may read the inputs wrongly.
+
 | Procedure | Tested on hardware |
 |---|---|
 | Back up, build and write the patched image | Yes |
