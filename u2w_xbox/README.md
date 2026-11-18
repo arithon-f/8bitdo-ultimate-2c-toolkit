@@ -130,7 +130,7 @@ The patch changes only the Bluetooth interface. USB mode, 2.4 GHz mode and the r
 - GameController creates `Paddle 1`–`4` only for product IDs `0x0b02` and `0x0b05`. For `0x0b22`, the ID of the Elite Series 2 over Bluetooth LE, it creates none.
 - `XboxOneHIDServicePlugin`, which parses the reports of Bluetooth Xbox controllers, reads the paddles from bits 0-3 of byte 17 of a 39-byte report (38 bytes and the report ID). It reads them only while bits 0-2 of byte 19, the Elite profile, are 0.
 
-The patch therefore uses product ID `0x0b05`, and the report map gives input report 1 a 23-byte vendor field, so the report is 38 bytes. The cave writes the paddles to byte 16 of the payload and leaves the rest of the vendor field at 0. The back buttons map to the paddles at the same positions on an Elite:
+The patch therefore uses product ID `0x0b05`, and the report map gives input report 1 a 23-byte vendor field, so the report is 38 bytes. The cave writes the paddles to byte 16 of the payload, the motion data to bytes 22-33, and 0 to the other bytes of the vendor field. The back buttons map to the paddles at the same positions on an Elite:
 
 | Back button | Bit in the stock input report | Elite paddle |
 |---|---|---|
