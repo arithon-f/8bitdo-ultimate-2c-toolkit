@@ -1,0 +1,59 @@
+    .text
+    .global cave
+cave:
+    tsub    sp, #32
+    tmov    r5, r4
+    tmov    r4, sp
+    tloadrb r0, [r5, #1]
+    tstorerb r0, [r4, #0]
+    tstorerb r0, [r4, #1]
+    tloadrb r0, [r5, #2]
+    tstorerb r0, [r4, #2]
+    tstorerb r0, [r4, #3]
+    tloadrb r0, [r5, #3]
+    tstorerb r0, [r4, #4]
+    tstorerb r0, [r4, #5]
+    tloadrb r0, [r5, #4]
+    tstorerb r0, [r4, #6]
+    tstorerb r0, [r4, #7]
+    tloadrb r0, [r5, #6]
+    tshftr r2, r0, #6
+    tshftl r1, r0, #2
+    tor r1, r2
+    tstorerb r1, [r4, #8]
+    tstorerb r2, [r4, #9]
+    tloadrb r0, [r5, #5]
+    tshftr r2, r0, #6
+    tshftl r1, r0, #2
+    tor r1, r2
+    tstorerb r1, [r4, #10]
+    tstorerb r2, [r4, #11]
+    tloadrb r0, [r5, #0]
+    tcmp    r0, #8
+    tjmi    hat_ok
+    tmovs   r0, #0
+    tj      hat_store
+hat_ok:
+    tadd    r0, #1
+hat_store:
+    tstorerb r0, [r4, #12]
+    tloadrb r0, [r5, #7]
+    tmovs   r1, #219
+    tand    r0, r1
+    tstorerb r0, [r4, #13]
+    tloadrb r0, [r5, #8]
+    tmovs   r1, #124
+    tand    r0, r1
+    tstorerb r0, [r4, #14]
+    tmovs   r0, #0
+    tstorerb r0, [r4, #15]
+    tstorerb r0, [r4, #16]
+    tstorerb r0, [r4, #17]
+    tstorerb r0, [r4, #18]
+    tmovs   r0, #64
+    tmovs   r1, #29
+    tmov    r2, r4
+    tmovs   r3, #19
+    tjl     notify
+    tadd    sp, #32
+    tjl     back
