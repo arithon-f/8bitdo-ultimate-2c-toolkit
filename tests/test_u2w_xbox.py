@@ -34,7 +34,10 @@ class Patch(unittest.TestCase):
         self.assertEqual(out[o:o + 7], bytes.fromhex(patch.PNP[2]))
         self.assertEqual(struct.unpack_from("<I", out, patch.MAP_LEN_AT - patch.BANK_A)[0], 98)
         r = patch.RUMBLE_ADDR - patch.BANK_A
-        self.assertEqual(out[r:r + len(patch.RUMBLE_ROUTINE) // 2], bytes.fromhex(patch.RUMBLE_ROUTINE))
+        routine = bytes.fromhex("".join(patch.RUMBLE_ROUTINE))
+        self.assertEqual(out[r:r + len(routine)], routine)
+        q = patch.RUMBLE_TABLE_ADDR - patch.BANK_A
+        self.assertEqual(out[q:q + 101], patch.RUMBLE_TABLE)
 
     def test_input_report_1_is_38_bytes(self):
         # XboxOneHIDServicePlugin reads the paddles from byte 17 only in a 39-byte report (38 bytes and the ID).
@@ -55,6 +58,13 @@ class Patch(unittest.TestCase):
             i += 1 + n
         self.assertEqual(bits, 38 * 8)
         self.assertEqual(patch.PNP[2], "02 5e 04 05 0b 01 00")
+
+    def test_core_haptics_table_undoes_the_square(self):
+        # GameController sends intensity p as 100 * p^2. The table must give 255 * p.
+        for p in (0.1, 0.3, 0.5, 0.7, 1.0):
+            sent = round(100 * p * p)
+            self.assertAlmostEqual(patch.RUMBLE_TABLE[sent], 255 * p, delta=4)
+        self.assertEqual((patch.RUMBLE_TABLE[0], patch.RUMBLE_TABLE[100]), (0, 255))
 
     def test_rumble_strength_reaches_255(self):
         # rumble.s: max(handle, trigger) * 164 >> 6, capped at 255. Xbox strengths run 0-100.

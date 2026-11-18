@@ -40,10 +40,15 @@ CAVE = (                                             # cave.s linked at 0x1c880 
     "82f981f01103a142e242284808a801c400a0008001b02043e849dba108006043284a7ca10800a04300a00fa1"
     "601401b126a9fbc1684ae94942f801a31a0080f004a31800020348f802a31800020388f808a3180002032244"
     "40a01da122ec26a3fb97e09f0a60f197a79d")
-RUMBLE = (0xD53E, "60 4a a1 4a", "0f 90 57 99")     # output callback: two loads -> tjl RUMBLE_ADDR
-RUMBLE_ADDR = 0x1C7F0                                # after the cave, in the same zero padding
-RUMBLE_ROUTINE = (                                   # rumble.s linked at 0x1c7f0
-    "204ba24a900200c210ec614be24a910200c211eca4a3580380f9ffa800c9ffa0590389f9ffa900c9ffa17007")
+RUMBLE = (0xD53E, "60 4a a1 4a", "0f 90 f7 99")     # output callback: two loads -> tjl RUMBLE_ADDR
+RUMBLE_ADDR = 0x1C930                                # after the cave, in the same zero padding
+RUMBLE_ROUTINE = (                                   # rumble.s linked at 0x1c930 with table=0x1c780
+    "204ba24a900200c210ec614be24a910200c211ec224cebaa09c064a800c964a064a900c964a1080b181c591c"
+    "7007a4a3580380f9ffa800c9ffa0590389f9ffa900c9ffa17007c04680c70100")
+# GameController sends Core Haptics intensity p as strength 100 * p^2. For GameController's packets (loop count 0,
+# where SDL sends 0xeb), rumble.s looks the strength up here to drive the motor at 255 * p.
+RUMBLE_TABLE_ADDR = 0x1C780
+RUMBLE_TABLE = bytes(int(255 * (x / 100) ** 0.5 + 0.5) for x in range(101))
 OUT_REF = (0x1C6F0, "05 02", "03 02")               # initial output report reference: report 3, output
 
 
@@ -86,8 +91,9 @@ def patch(flash: bytes) -> bytes:
     edit(bank, *HOOK)
     edit(bank, CAVE_ADDR, bytes(len(cave)).hex(), cave.hex())
     edit(bank, *RUMBLE)
-    routine = bytes.fromhex(RUMBLE_ROUTINE)
+    routine = bytes.fromhex("".join(RUMBLE_ROUTINE))
     edit(bank, RUMBLE_ADDR, bytes(len(routine)).hex(), routine.hex())
+    edit(bank, RUMBLE_TABLE_ADDR, bytes(len(RUMBLE_TABLE)).hex(), RUMBLE_TABLE.hex())
     edit(bank, *OUT_REF)
     h, crc, total = checks(bank)
     struct.pack_into("<II", bank, h - 4, crc, total)
@@ -96,7 +102,7 @@ def patch(flash: bytes) -> bytes:
 
 def edited_ranges(h: int) -> list[tuple[int, int]]:
     return [(PNP[0], 7), (MAP_ADDR, 113), (MAP_LEN_AT, 4), (HOOK[0], 12), (CAVE_ADDR, len(CAVE) // 2),
-            (RUMBLE[0], 4), (RUMBLE_ADDR, len(RUMBLE_ROUTINE) // 2), (OUT_REF[0], 2), (BANK_A + h - 4, 8)]
+            (RUMBLE[0], 4), (RUMBLE_ADDR, len("".join(RUMBLE_ROUTINE)) // 2), (RUMBLE_TABLE_ADDR, len(RUMBLE_TABLE)), (OUT_REF[0], 2), (BANK_A + h - 4, 8)]
 
 
 def verify(original: bytes, patched: bytes) -> None:

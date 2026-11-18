@@ -118,7 +118,8 @@ The patch changes only the Bluetooth interface. USB mode, 2.4 GHz mode and the r
 | Input report notify | `0xe458` | `notify(0x40, 0x1d, payload, 33)` | call to the cave |
 | Cave | `0x1c880` | zero padding with no references | `cave.s`: builds the Xbox input report, with the paddles, and sends it with length 38 |
 | Rumble callback | `0xd53e` | motors from value bytes 0 and 1 | call to the rumble routine |
-| Rumble routine | `0x1c7f0` | zero padding with no references | `rumble.s`: motor strengths from the Xbox packet, converted to 0-255 |
+| Rumble routine | `0x1c930` | zero padding with no references | `rumble.s`: motor strengths from the Xbox packet, converted to 0-255 |
+| Rumble table | `0x1c780` | zero padding with no references | 101 bytes: `255 × √(x / 100)` for strengths from GameController |
 | Output report reference | `0x1c6f0` | `05 02` | `03 02` |
 | CRC and start-up sum | `0x1ca60` | | recomputed |
 
@@ -140,7 +141,12 @@ The patch therefore uses product ID `0x0b05`, and the report map gives input rep
 
 **Rumble path.** Stock firmware drives the motors from output report 5, through the write callback at `0xd534` and the motor routine at `0x12220`. The motor routine takes strengths from 0 to 255. The output routine at `0x12114` sets a PWM duty of `20 + strength × 80 / 255` percent.
 
-The patch changes the report ID to 3, and the callback calls the rumble routine, `rumble.s`. The routine reads the Xbox packet `[0f LT RT LOW HIGH ff 00 eb]`, where each strength runs from 0 to 100. The controller has motors in the handles only. The left motor gets the larger of LT and LOW, and the right motor gets the larger of RT and HIGH. The routine multiplies each strength by 164, shifts it right by 6 and caps it at 255, so 100 becomes 255.
+The patch changes the report ID to 3, and the callback calls the rumble routine, `rumble.s`. The routine reads the Xbox packet `[0f LT RT LOW HIGH ff 00 eb]`, where each strength runs from 0 to 100. The controller has motors in the handles only. The left motor gets the larger of LT and LOW, and the right motor gets the larger of RT and HIGH. The routine then converts each strength to 0-255 in one of two ways, by the last byte of the packet:
+
+- **GameController's packets** end with loop count `00`: `03 0f LT RT LOW HIGH 0a 00 00`. GameController sends a Core Haptics intensity `p` as strength `100 × p²`, so 30 % arrives as 9. The routine caps the strength at 100 and looks it up in the rumble table, where entry `x` is `255 × √(x / 100)`. The motors then run at `255 × p`.
+- **Packets from SDL's Xbox driver** end with loop count `0xeb`, and carry the strength linearly. The routine multiplies each strength by 164, shifts it right by 6 and caps it at 255, so 100 becomes 255.
+
+GameController's plugin, `XboxOneHIDServicePlugin`, cuts off the fraction when it multiplies by 100, so a Core Haptics intensity below about 10 % arrives as 0. No firmware can recover that rumble. A real Xbox controller receives the same packets from GameController, with the same squared strength and the same loss below 10 %.
 
 **Integrity checks.** Bank A contains two checks over its first `hsize - 4` bytes, where `hsize` is the header word at `+0x18`: a Telink CRC at `hsize - 4`, and the start-up sum at `hsize`. The patch recomputes both. At start-up, the bootloader runs bank A only when the sum matches. According to the bootloader code, a failed sum makes the bootloader copy bank B, the second firmware copy at `0x32000`, over bank A. No test has shown that copy yet.
 
@@ -160,8 +166,8 @@ Build the rumble routine the same way, linked at its own address:
 
 ```sh
 tc32-elf-as -o rumble.o rumble.s
-tc32-elf-ld -Ttext=0x1c7f0 -o rumble.elf rumble.o
+tc32-elf-ld -Ttext=0x1c930 --defsym=table=0x1c780 -o rumble.elf rumble.o
 tc32-elf-objcopy -O binary --only-section=.text rumble.elf rumble.bin
 ```
 
-`CAVE` and `RUMBLE_ROUTINE` in `patch.py` hold the resulting bytes. After any change, disassemble the patched bank with `tc32-elf-objdump -D -b binary -m tc32 --adjust-vma=0x5000`, and check that every branch target is the intended address.
+`CAVE` and `RUMBLE_ROUTINE` in `patch.py` hold the resulting bytes. `patch.py` computes `RUMBLE_TABLE`. After any change, disassemble the patched bank with `tc32-elf-objdump -D -b binary -m tc32 --adjust-vma=0x5000`, and check that every branch target is the intended address.
