@@ -7,7 +7,7 @@ python3 -m u2w_xbox.patch --stock BACKUP.bin OUT.bin    the unmodified bank, to 
 Addresses are flash addresses. Bank A starts at 0x5000. Code above the RAM code (which ends below 0x9000) runs from
 flash at its own address, so the hook, the cave and the rumble callback use the same numbers as the flash.
 
-The bank carries two checks over its first hsize-4 bytes (hsize is the header word at +0x18): a Telink CRC (~crc32) at
+Bank A contains two checks over its first hsize-4 bytes (hsize is the header word at +0x18): a Telink CRC (~crc32) at
 hsize-4, and at hsize the byte sum that the bootloader compares at start-up. Both are recomputed after the edits.
 """
 import struct
@@ -15,10 +15,10 @@ import sys
 import zlib
 
 BANK_A, BANK_END = 0x5000, 0x29000
-DATA_END = 0x28800                                   # 1.10, like 1.09, is 0x23800 bytes; the rest of the bank is 0xff
+DATA_END = 0x28800                                   # 1.10 and 1.09 are 0x23800 bytes. The rest of the bank is 0xff.
 HSIZE_AT = 0x18
 
-# Each edit is (address, original bytes, new bytes). Every original is checked before anything changes.
+# Each edit is (address, 1.10 bytes, new bytes). patch() compares every 1.10 value before it changes anything.
 PNP = (0x1B54C, "12 c8 2d 12 60 01 00", "02 5e 04 22 0b 01 00")   # PnP ID: 2dc8:6012 -> 045e:0b22, Xbox Elite V2
 STOCK_MAP = (                                                      # 113 bytes: input report 1 of 33 bytes, output 5
     "05 01 09 05 a1 01 85 01 05 01 15 00 25 07 46 3b 01 95 01 75 04 65 14 09 39 81 42"
@@ -30,11 +30,11 @@ XBOX_MAP = (                                                       # 98 bytes: i
     "05010905a1018501093009310933093426ffff950475108102050209c409c526ffff95027510810205"
     "010939250895017504814295017504810305091901291025019510750181020600ff09017508950481"
     "02050f092185030970750895089102c0")
-MAP_ADDR = 0x1B4D8                                   # report map value; its GATT entry is at 0x1b928, length at +4
+MAP_ADDR = 0x1B4D8                                   # report map value. Its GATT entry is at 0x1b928, with the length at +4.
 MAP_LEN_AT = 0x1B92C
 HOOK = (0xE458, "40 a0 1d a1 22 ec 21 a3 0a 90 36 9a",          # notify(0x40, 0x1d, payload, 33) -> tjl cave, 4 nops
         "0e 90 92 99 c0 06 c0 06 c0 06 c0 06")
-CAVE_ADDR = 0x1C780                                  # zero padding after the initialised data, referenced by nothing
+CAVE_ADDR = 0x1C780                                  # zero padding after the initialised data, with no references
 CAVE = (                                             # cave.s linked at 0x1c780 with notify=0x188d0 and back=0xe464
     "886025ec6c06684820406040a848a040e040e848204160412849a041e041a84982f981f01103214262426849"
     "82f981f01103a142e242284808a801c400a0008001b02043e849dba108006043284a7ca10800a04300a0e043"
@@ -44,7 +44,7 @@ OUT_REF = (0x1C6F0, "05 02", "03 02")               # initial output report refe
 
 
 class NotStock(Exception):
-    """The backup isn't a whole, original firmware 1.10 bank A."""
+    """The backup does not contain a whole stock 1.10 bank A."""
 
 
 def checks(bank) -> tuple[int, int, int]:
@@ -69,7 +69,7 @@ def edit(bank: bytearray, addr: int, old: str, new: str) -> None:
     old_b, new_b = bytes.fromhex(old), bytes.fromhex(new)
     o = addr - BANK_A
     if bytes(bank[o:o + len(old_b)]) != old_b:
-        raise NotStock(f"{addr:#x} isn't 1.10's {old_b.hex(' ')}")
+        raise NotStock(f"{addr:#x} does not contain the 1.10 bytes {old_b.hex(' ')}")
     bank[o:o + len(new_b)] = new_b
 
 

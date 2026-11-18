@@ -3,10 +3,11 @@
 
 python3 -m u2w_xbox.write IMAGE.bin [--write] [--trace FILE]
 
-Without --write it only reads. With --write it runs u2w_backup.restore.run unchanged, with IMAGE in place of 8BitDo's
-1.09: the bootloader must match the latest backup, no update may be staged, BootWriter limits erases and writes to
-0x5000-0x29000, the sector holding the start-up sum is written last, and everything is read back. Its messages name
-1.09 because that wording is part of restore.run; the bytes written are IMAGE's.
+Without --write, the command only reads. With --write, it runs u2w_backup.restore.run unchanged, with IMAGE in place
+of 8BitDo's 1.09. The writer requires a bootloader that matches the latest backup, and no staged update. BootWriter
+limits erases and writes to 0x5000-0x29000. The writer writes the sector with the start-up sum last, and reads
+everything back. Its messages name 1.09, because the wording of restore.run names 1.09. The bytes written come from
+IMAGE.
 """
 import sys
 from pathlib import Path
