@@ -115,19 +115,22 @@ The patch changes only the Bluetooth interface. USB mode, 2.4 GHz mode and the r
 | Report map length in the GATT table | `0x1b92c` | `0x71` | `0x62` |
 | Input report notify | `0xe458` | `notify(0x40, 0x1d, payload, 33)` | call to the cave |
 | Cave | `0x1c780` | zero padding with no references | `cave.s`: builds the Xbox input report and sends it with length 19 |
-| Rumble callback | `0xd53e` | motors from value bytes 0 and 1 | motors from value bytes 3 and 4, the Xbox LOW and HIGH bytes |
+| Rumble callback | `0xd53e` | motors from value bytes 0 and 1 | call to the rumble routine |
+| Rumble routine | `0x1c7f0` | zero padding with no references | `rumble.s`: motor strengths from the Xbox packet, converted to 0-255 |
 | Output report reference | `0x1c6f0` | `05 02` | `03 02` |
 | CRC and start-up sum | `0x1ca60` | | recomputed |
 
 **Input report.** The first 9 bytes of the stock input report have the same layout as on the Ultimate 2C: hat (0-7, 15 when released), LX, LY, RX, RY, RT, LT, then the button bits. The cave writes the 19-byte Xbox Elite input report: sticks as 16-bit values, triggers as 10-bit values, the hat as 1-8 with 0 when released, and the buttons at the Xbox bit positions. Each trigger value is `v << 2 | v >> 6`, so 255 gives 1023.
 
-**Rumble path.** Stock firmware drives the motors from output report 5, through the write callback at `0xd534` and the motor routine at `0x12220`. The patch changes the report ID to 3. After the change, the callback reads the two motor bytes from their positions in the Xbox packet `[0f LT RT LOW HIGH ff 00 eb]`. It ignores the trigger motor bytes, because the controller has no trigger motors.
+**Rumble path.** Stock firmware drives the motors from output report 5, through the write callback at `0xd534` and the motor routine at `0x12220`. The motor routine takes strengths from 0 to 255. The output routine at `0x12114` sets a PWM duty of `20 + strength × 80 / 255` percent.
+
+The patch changes the report ID to 3, and the callback calls the rumble routine, `rumble.s`. The routine reads the Xbox packet `[0f LT RT LOW HIGH ff 00 eb]`, where each strength runs from 0 to 100. The controller has motors in the handles only. The left motor gets the larger of LT and LOW, and the right motor gets the larger of RT and HIGH. The routine multiplies each strength by 164, shifts it right by 6 and caps it at 255, so 100 becomes 255.
 
 **Integrity checks.** Bank A contains two checks over its first `hsize - 4` bytes, where `hsize` is the header word at `+0x18`: a Telink CRC at `hsize - 4`, and the start-up sum at `hsize`. The patch recomputes both. At start-up, the bootloader runs bank A only when the sum matches. According to the bootloader code, a failed sum makes the bootloader copy bank B, the second firmware copy at `0x32000`, over bank A. No test has shown that copy yet.
 
 **Not included.** The patched image does not report L4, R4, M1 and M2, because the Xbox input report has no field that GameController reads for them. It also drops the motion data and the digital trigger bits. On tvOS, the system handles Home and does not pass it to apps.
 
-## Rebuild the cave
+## Rebuild the cave and the rumble routine
 
 The Telink tc32 toolchain assembles `cave.s`. Use the `macos` branch of flyskywhy/tc32. Its binaries are x86_64 and run under Rosetta. Link the cave at its address, with the two firmware addresses that it calls:
 
@@ -137,4 +140,12 @@ tc32-elf-ld -Ttext=0x1c780 --defsym=notify=0x188d0 --defsym=back=0xe464 -o cave.
 tc32-elf-objcopy -O binary --only-section=.text cave.elf cave.bin
 ```
 
-`CAVE` in `patch.py` holds the resulting bytes. After any change, disassemble the patched bank with `tc32-elf-objdump -D -b binary -m tc32 --adjust-vma=0x5000`, and check that every branch target is the intended address.
+Build the rumble routine the same way, linked at its own address:
+
+```sh
+tc32-elf-as -o rumble.o rumble.s
+tc32-elf-ld -Ttext=0x1c7f0 -o rumble.elf rumble.o
+tc32-elf-objcopy -O binary --only-section=.text rumble.elf rumble.bin
+```
+
+`CAVE` and `RUMBLE_ROUTINE` in `patch.py` hold the resulting bytes. After any change, disassemble the patched bank with `tc32-elf-objdump -D -b binary -m tc32 --adjust-vma=0x5000`, and check that every branch target is the intended address.

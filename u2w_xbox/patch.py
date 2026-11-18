@@ -39,7 +39,10 @@ CAVE = (                                             # cave.s linked at 0x1c780 
     "886025ec6c06684820406040a848a040e040e848204160412849a041e041a84982f981f01103214262426849"
     "82f981f01103a142e242284808a801c400a0008001b02043e849dba108006043284a7ca10800a04300a0e043"
     "20446044a04440a01da122ec13a3fc9773980860f1973a9e")
-RUMBLE = (0xD53E, "60 4a a1 4a", "20 4b 61 4b")     # output callback: motors from value[3], value[4] (Xbox LOW, HIGH)
+RUMBLE = (0xD53E, "60 4a a1 4a", "0f 90 57 99")     # output callback: two loads -> tjl RUMBLE_ADDR
+RUMBLE_ADDR = 0x1C7F0                                # after the cave, in the same zero padding
+RUMBLE_ROUTINE = (                                   # rumble.s linked at 0x1c7f0
+    "204ba24a900200c210ec614be24a910200c211eca4a3580380f9ffa800c9ffa0590389f9ffa900c9ffa17007")
 OUT_REF = (0x1C6F0, "05 02", "03 02")               # initial output report reference: report 3, output
 
 
@@ -82,6 +85,8 @@ def patch(flash: bytes) -> bytes:
     edit(bank, *HOOK)
     edit(bank, CAVE_ADDR, bytes(len(cave)).hex(), cave.hex())
     edit(bank, *RUMBLE)
+    routine = bytes.fromhex(RUMBLE_ROUTINE)
+    edit(bank, RUMBLE_ADDR, bytes(len(routine)).hex(), routine.hex())
     edit(bank, *OUT_REF)
     h, crc, total = checks(bank)
     struct.pack_into("<II", bank, h - 4, crc, total)
@@ -90,7 +95,7 @@ def patch(flash: bytes) -> bytes:
 
 def edited_ranges(h: int) -> list[tuple[int, int]]:
     return [(PNP[0], 7), (MAP_ADDR, 113), (MAP_LEN_AT, 4), (HOOK[0], 12), (CAVE_ADDR, len(CAVE) // 2),
-            (RUMBLE[0], 4), (OUT_REF[0], 2), (BANK_A + h - 4, 8)]
+            (RUMBLE[0], 4), (RUMBLE_ADDR, len(RUMBLE_ROUTINE) // 2), (OUT_REF[0], 2), (BANK_A + h - 4, 8)]
 
 
 def verify(original: bytes, patched: bytes) -> None:

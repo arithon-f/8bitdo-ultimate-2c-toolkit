@@ -33,6 +33,13 @@ class Patch(unittest.TestCase):
         o = patch.PNP[0] - patch.BANK_A
         self.assertEqual(out[o:o + 7], bytes.fromhex(patch.PNP[2]))
         self.assertEqual(struct.unpack_from("<I", out, patch.MAP_LEN_AT - patch.BANK_A)[0], 98)
+        r = patch.RUMBLE_ADDR - patch.BANK_A
+        self.assertEqual(out[r:r + len(patch.RUMBLE_ROUTINE) // 2], bytes.fromhex(patch.RUMBLE_ROUTINE))
+
+    def test_rumble_strength_reaches_255(self):
+        # rumble.s: max(handle, trigger) * 164 >> 6, capped at 255. Xbox strengths run 0-100.
+        scale = lambda v: min(v * 164 >> 6, 255)
+        self.assertEqual([scale(v) for v in (0, 50, 100, 255)], [0, 128, 255, 255])
 
     def test_refuses_a_bank_that_differs_at_an_edit_site(self):
         bank = bank_with_originals()
