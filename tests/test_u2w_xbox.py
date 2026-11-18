@@ -36,6 +36,26 @@ class Patch(unittest.TestCase):
         r = patch.RUMBLE_ADDR - patch.BANK_A
         self.assertEqual(out[r:r + len(patch.RUMBLE_ROUTINE) // 2], bytes.fromhex(patch.RUMBLE_ROUTINE))
 
+    def test_input_report_1_is_38_bytes(self):
+        # XboxOneHIDServicePlugin reads the paddles from byte 17 only in a 39-byte report (38 bytes and the ID).
+        m = bytes.fromhex(patch.XBOX_MAP)
+        bits, size, count, report = 0, 0, 0, None
+        i = 0
+        while i < len(m):
+            tag, n = m[i], m[i] & 3
+            val = int.from_bytes(m[i + 1:i + 1 + n], "little")
+            if tag & 0xFC == 0x84:
+                report = val
+            elif tag & 0xFC == 0x74:
+                size = val
+            elif tag & 0xFC == 0x94:
+                count = val
+            elif tag & 0xFC == 0x80 and report == 1:
+                bits += size * count
+            i += 1 + n
+        self.assertEqual(bits, 38 * 8)
+        self.assertEqual(patch.PNP[2], "02 5e 04 05 0b 01 00")
+
     def test_rumble_strength_reaches_255(self):
         # rumble.s: max(handle, trigger) * 164 >> 6, capped at 255. Xbox strengths run 0-100.
         scale = lambda v: min(v * 164 >> 6, 255)

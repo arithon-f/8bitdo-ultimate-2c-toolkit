@@ -1,7 +1,7 @@
     .text
     .global cave
 cave:
-    tsub    sp, #32
+    tsub    sp, #40
     tmov    r5, r4
     tmov    r4, sp
     tloadrb r0, [r5, #1]
@@ -46,14 +46,34 @@ hat_store:
     tand    r0, r1
     tstorerb r0, [r4, #14]
     tmovs   r0, #0
-    tstorerb r0, [r4, #15]
-    tstorerb r0, [r4, #16]
-    tstorerb r0, [r4, #17]
-    tstorerb r0, [r4, #18]
+    tmovs   r1, #15
+zero:
+    tstorerb r0, [r4, r1]
+    tadd    r1, #1
+    tcmp    r1, #38
+    tjne    zero
+    tloadrb r0, [r5, #9]
+    tloadrb r1, [r5, #7]
+    tshftr  r2, r0, #1
+    tmovs   r3, #1
+    tand    r2, r3
+    tshftl  r0, r0, #2
+    tmovs   r3, #4
+    tand    r0, r3
+    tor     r2, r0
+    tshftr  r0, r1, #1
+    tmovs   r3, #2
+    tand    r0, r3
+    tor     r2, r0
+    tshftr  r0, r1, #2
+    tmovs   r3, #8
+    tand    r0, r3
+    tor     r2, r0
+    tstorerb r2, [r4, #16]
     tmovs   r0, #64
     tmovs   r1, #29
     tmov    r2, r4
-    tmovs   r3, #19
+    tmovs   r3, #38
     tjl     notify
-    tadd    sp, #32
+    tadd    sp, #40
     tjl     back

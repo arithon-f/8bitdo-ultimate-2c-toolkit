@@ -1,8 +1,8 @@
 # Ultimate 2 Wireless: Xbox identity with rumble (prototype)
 
-`u2w_xbox` patches firmware 1.10 of the 8BitDo Ultimate 2 Wireless. Over Bluetooth, the patched controller reports the identity of an Xbox Elite controller. Apple's GameController framework then loads its Xbox driver for the controller, and that driver offers haptics and the battery level. With stock firmware, tvOS and macOS classify the controller as a generic HID gamepad with neither.
+`u2w_xbox` patches firmware 1.10 of the 8BitDo Ultimate 2 Wireless. Over Bluetooth, the patched controller reports the identity of an Xbox Elite controller. Apple's GameController framework then loads its Xbox driver for the controller, and that driver offers haptics, the battery level and the four Elite paddles. With stock firmware, tvOS and macOS classify the controller as a generic HID gamepad with neither haptics nor battery level.
 
-On an Apple TV 4K (3rd generation) with tvOS 27.2.1, GameController reports the category `Xbox One` for the patched controller. It lists the haptic localities `All, Default, Handles, Left Handle, Right Handle, Left Trigger, Right Trigger, Triggers` and the battery level. Core Haptics drives the motors. Every input maps to its Xbox element. macOS is untested.
+On an Apple TV 4K (3rd generation) with tvOS 27.2.1, GameController reports the category `Xbox One` for the patched controller. It lists the haptic localities `All, Default, Handles, Left Handle, Right Handle, Left Trigger, Right Trigger, Triggers`, the battery level and `Paddle 1`–`4`. Core Haptics drives the motors from every locality. Every input maps to its Xbox element, and the four back buttons press the paddles. On macOS 27.2.1, GameController lists the same category, localities and paddles, and every input except Home reaches apps.
 
 | Procedure | Tested on hardware |
 |---|---|
@@ -110,17 +110,31 @@ The patch changes only the Bluetooth interface. USB mode, 2.4 GHz mode and the r
 
 | Edit | Address | Stock firmware | Patched image |
 |---|---|---|---|
-| PnP ID | `0x1b54c` | `2dc8:6012` | `045e:0b22`, Xbox Elite V2 |
-| HID report map | `0x1b4d8` | 113 bytes: input report 1 of 33 bytes, output report 5 | 98 bytes: input report 1 of 19 bytes, output report 3 |
+| PnP ID | `0x1b54c` | `2dc8:6012` | `045e:0b05`, Xbox Elite Series 2 |
+| HID report map | `0x1b4d8` | 113 bytes: input report 1 of 33 bytes, output report 5 | 98 bytes: input report 1 of 38 bytes, output report 3 |
 | Report map length in the GATT table | `0x1b92c` | `0x71` | `0x62` |
 | Input report notify | `0xe458` | `notify(0x40, 0x1d, payload, 33)` | call to the cave |
-| Cave | `0x1c780` | zero padding with no references | `cave.s`: builds the Xbox input report and sends it with length 19 |
+| Cave | `0x1c880` | zero padding with no references | `cave.s`: builds the Xbox input report, with the paddles, and sends it with length 38 |
 | Rumble callback | `0xd53e` | motors from value bytes 0 and 1 | call to the rumble routine |
 | Rumble routine | `0x1c7f0` | zero padding with no references | `rumble.s`: motor strengths from the Xbox packet, converted to 0-255 |
 | Output report reference | `0x1c6f0` | `05 02` | `03 02` |
 | CRC and start-up sum | `0x1ca60` | | recomputed |
 
-**Input report.** The first 9 bytes of the stock input report have the same layout as on the Ultimate 2C: hat (0-7, 15 when released), LX, LY, RX, RY, RT, LT, then the button bits. The cave writes the 19-byte Xbox Elite input report: sticks as 16-bit values, triggers as 10-bit values, the hat as 1-8 with 0 when released, and the buttons at the Xbox bit positions. Each trigger value is `v << 2 | v >> 6`, so 255 gives 1023.
+**Input report.** The first 9 bytes of the stock input report have the same layout as on the Ultimate 2C: hat (0-7, 15 when released), LX, LY, RX, RY, RT, LT, then the button bits. The cave writes the 38-byte Xbox Elite input report: sticks as 16-bit values, triggers as 10-bit values, the hat as 1-8 with 0 when released, and the buttons at the Xbox bit positions. Each trigger value is `v << 2 | v >> 6`, so 255 gives 1023.
+
+**Paddles.** Two checks in Apple's code decide whether the back buttons reach apps:
+
+- GameController creates `Paddle 1`–`4` only for product IDs `0x0b02` and `0x0b05`. For `0x0b22`, the ID of the Elite Series 2 over Bluetooth LE, it creates none.
+- `XboxOneHIDServicePlugin`, which parses the reports of Bluetooth Xbox controllers, reads the paddles from bits 0-3 of byte 17 of a 39-byte report (38 bytes and the report ID). It reads them only while bits 0-2 of byte 19, the Elite profile, are 0.
+
+The patch therefore uses product ID `0x0b05`, and the report map gives input report 1 a 23-byte vendor field, so the report is 38 bytes. The cave writes the paddles to byte 16 of the payload and leaves the rest of the vendor field at 0. The back buttons map to the paddles at the same positions on an Elite:
+
+| Back button | Bit in the stock input report | Elite paddle |
+|---|---|---|
+| R4, upper right | byte 9, `0x02` | P1 |
+| PR, lower right | byte 7, `0x04` | P2 |
+| L4, upper left | byte 9, `0x01` | P3 |
+| PL, lower left | byte 7, `0x20` | P4 |
 
 **Rumble path.** Stock firmware drives the motors from output report 5, through the write callback at `0xd534` and the motor routine at `0x12220`. The motor routine takes strengths from 0 to 255. The output routine at `0x12114` sets a PWM duty of `20 + strength × 80 / 255` percent.
 
@@ -128,7 +142,7 @@ The patch changes the report ID to 3, and the callback calls the rumble routine,
 
 **Integrity checks.** Bank A contains two checks over its first `hsize - 4` bytes, where `hsize` is the header word at `+0x18`: a Telink CRC at `hsize - 4`, and the start-up sum at `hsize`. The patch recomputes both. At start-up, the bootloader runs bank A only when the sum matches. According to the bootloader code, a failed sum makes the bootloader copy bank B, the second firmware copy at `0x32000`, over bank A. No test has shown that copy yet.
 
-**Not included.** The patched image does not report L4, R4, M1 and M2, because the Xbox input report has no field that GameController reads for them. It also drops the motion data and the digital trigger bits. On tvOS, the system handles Home and does not pass it to apps.
+**Not included.** The patched image drops the motion data and the digital trigger bits. GameController offers no motion data for an Xbox controller. On tvOS, the system handles Home and does not pass it to apps. On macOS, Home does not reach apps either.
 
 ## Rebuild the cave and the rumble routine
 
@@ -136,7 +150,7 @@ The Telink tc32 toolchain assembles `cave.s`. Use the `macos` branch of flyskywh
 
 ```sh
 tc32-elf-as -o cave.o cave.s
-tc32-elf-ld -Ttext=0x1c780 --defsym=notify=0x188d0 --defsym=back=0xe464 -o cave.elf cave.o
+tc32-elf-ld -Ttext=0x1c880 --defsym=notify=0x188d0 --defsym=back=0xe464 -o cave.elf cave.o
 tc32-elf-objcopy -O binary --only-section=.text cave.elf cave.bin
 ```
 
