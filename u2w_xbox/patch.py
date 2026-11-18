@@ -38,11 +38,11 @@ CAVE_ADDR = 0x1C880                                  # zero padding after the in
 CAVE = (                                             # cave.s linked at 0x1c880 with notify=0x188d0 and back=0xe464
     "8a6025ec6c06684820406040a848a040e040e848204160412849a041e041a84982f981f01103214262426849"
     "82f981f01103a142e242284808a801c400a0008001b02043e849dba108006043284a7ca10800a04300a00fa1"
-    "601401b126a9fbc1684ae94942f801a31a0080f004a31800020348f802a31800020388f808a3180002032244"
-    "40a01da122ec26a3fb97e09f0a60f197a79d")
-RUMBLE = (0xD53E, "60 4a a1 4a", "0f 90 f7 99")     # output callback: two loads -> tjl RUMBLE_ADDR
-RUMBLE_ADDR = 0x1C930                                # after the cave, in the same zero padding
-RUMBLE_ROUTINE = (                                   # rumble.s linked at 0x1c930 with table=0x1c780
+    "601401b126a9fbc10ea1681c0aec08b2a01401b11aa9f8c1684ae94942f801a31a0080f004a31800020348f8"
+    "02a31800020388f808a318000203224440a01da122ec26a3fb97d89f0a60f1979f9d")
+RUMBLE = (0xD53E, "60 4a a1 4a", "0f 90 ff 99")     # output callback: two loads -> tjl RUMBLE_ADDR
+RUMBLE_ADDR = 0x1C940                                # after the cave, in the same zero padding
+RUMBLE_ROUTINE = (                                   # rumble.s linked at 0x1c940 with table=0x1c780
     "204ba24a900200c210ec614be24a910200c211ec224cebaa09c064a800c964a064a900c964a1080b181c591c"
     "7007a4a3580380f9ffa800c9ffa0590389f9ffa900c9ffa17007c04680c70100")
 # GameController sends Core Haptics intensity p as strength 100 * p^2. For GameController's packets (loop count 0,

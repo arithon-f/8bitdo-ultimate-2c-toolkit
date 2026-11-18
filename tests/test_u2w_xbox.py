@@ -59,6 +59,13 @@ class Patch(unittest.TestCase):
         self.assertEqual(bits, 38 * 8)
         self.assertEqual(patch.PNP[2], "02 5e 04 05 0b 01 00")
 
+    def test_layout_leaves_no_overlap(self):
+        cave = len("".join(patch.CAVE)) // 2
+        routine = len("".join(patch.RUMBLE_ROUTINE)) // 2
+        self.assertLessEqual(patch.RUMBLE_TABLE_ADDR + len(patch.RUMBLE_TABLE), patch.CAVE_ADDR)
+        self.assertLessEqual(patch.CAVE_ADDR + cave, patch.RUMBLE_ADDR)
+        self.assertLessEqual(patch.RUMBLE_ADDR + routine, 0x1CA5C)
+
     def test_core_haptics_table_undoes_the_square(self):
         # GameController sends intensity p as 100 * p^2. The table must give 255 * p.
         for p in (0.1, 0.3, 0.5, 0.7, 1.0):

@@ -116,9 +116,9 @@ The patch changes only the Bluetooth interface. USB mode, 2.4 GHz mode and the r
 | HID report map | `0x1b4d8` | 113 bytes: input report 1 of 33 bytes, output report 5 | 98 bytes: input report 1 of 38 bytes, output report 3 |
 | Report map length in the GATT table | `0x1b92c` | `0x71` | `0x62` |
 | Input report notify | `0xe458` | `notify(0x40, 0x1d, payload, 33)` | call to the cave |
-| Cave | `0x1c880` | zero padding with no references | `cave.s`: builds the Xbox input report, with the paddles, and sends it with length 38 |
+| Cave | `0x1c880` | zero padding with no references | `cave.s`: builds the Xbox input report, with the paddles and the motion data, and sends it with length 38 |
 | Rumble callback | `0xd53e` | motors from value bytes 0 and 1 | call to the rumble routine |
-| Rumble routine | `0x1c930` | zero padding with no references | `rumble.s`: motor strengths from the Xbox packet, converted to 0-255 |
+| Rumble routine | `0x1c940` | zero padding with no references | `rumble.s`: motor strengths from the Xbox packet, converted to 0-255 |
 | Rumble table | `0x1c780` | zero padding with no references | 101 bytes: `255 × √(x / 100)` for strengths from GameController |
 | Output report reference | `0x1c6f0` | `05 02` | `03 02` |
 | CRC and start-up sum | `0x1ca60` | | recomputed |
@@ -150,7 +150,9 @@ GameController's plugin, `XboxOneHIDServicePlugin`, cuts off the fraction when i
 
 **Integrity checks.** Bank A contains two checks over its first `hsize - 4` bytes, where `hsize` is the header word at `+0x18`: a Telink CRC at `hsize - 4`, and the start-up sum at `hsize`. The patch recomputes both. At start-up, the bootloader runs bank A only when the sum matches. According to the bootloader code, a failed sum makes the bootloader copy bank B, the second firmware copy at `0x32000`, over bank A. No test has shown that copy yet.
 
-**Not included.** The patched image drops the motion data and the digital trigger bits. GameController offers no motion data for an Xbox controller. On tvOS, the system handles Home and does not pass it to apps. On macOS, Home does not reach apps either.
+**Motion data.** Bytes 14-25 of the stock input report carry the gyroscope and the accelerometer. The cave copies them unchanged to bytes 23-34 of the patched report, counting the report ID. GameController offers no motion data for a controller in the Xbox category, and SDL reads no motion data from an Xbox controller, so neither passes these bytes to games. Only an app that reads the raw HID report, and knows this layout, sees them. On tvOS, apps cannot read raw HID reports.
+
+**Not included.** The patched image drops the digital trigger bits. On tvOS, the system handles Home and does not pass it to apps. On macOS, Home does not reach apps either.
 
 ## Rebuild the cave and the rumble routine
 
@@ -166,7 +168,7 @@ Build the rumble routine the same way, linked at its own address:
 
 ```sh
 tc32-elf-as -o rumble.o rumble.s
-tc32-elf-ld -Ttext=0x1c930 --defsym=table=0x1c780 -o rumble.elf rumble.o
+tc32-elf-ld -Ttext=0x1c940 --defsym=table=0x1c780 -o rumble.elf rumble.o
 tc32-elf-objcopy -O binary --only-section=.text rumble.elf rumble.bin
 ```
 

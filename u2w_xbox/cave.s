@@ -52,6 +52,15 @@ zero:
     tadd    r1, #1
     tcmp    r1, #38
     tjne    zero
+    tmovs   r1, #14
+motion:
+    tloadrb r0, [r5, r1]
+    tmov    r2, r1
+    tadd    r2, #8
+    tstorerb r0, [r4, r2]
+    tadd    r1, #1
+    tcmp    r1, #26
+    tjne    motion
     tloadrb r0, [r5, #9]
     tloadrb r1, [r5, #7]
     tshftr  r2, r0, #1
