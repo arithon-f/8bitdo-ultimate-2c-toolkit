@@ -64,7 +64,7 @@ Each controller needs its own backup.
 7. Unplug the cable and set the mode switch to BT.
 8. On every device that the controller was paired with, forget the controller in the Bluetooth settings. A device that keeps the old pairing can also keep the old description of the controller.
 9. Hold Pair for 3 seconds, and pair the controller again. The controller name does not change.
-10. Check the result with `tvos/rumble-test` on an Apple TV, or with the controller test app on a Mac (`macos/u2w/build-test.sh`). The category must be `Xbox One`, and the haptic localities must be listed.
+10. Check the result with the controller test app on a Mac (`macos/u2w/build-test.sh`), or with any app that lists a controller's GameController details. The category must be `Xbox One`, and the haptic localities must be listed.
 
 ## Return to stock firmware
 
