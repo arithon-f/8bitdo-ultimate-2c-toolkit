@@ -2,7 +2,7 @@
 
 `u2w_xbox` patches firmware 1.10 of the 8BitDo Ultimate 2 Wireless. Over Bluetooth, the patched controller reports the identity of an Xbox Elite controller. Apple's GameController framework then loads its Xbox driver for the controller, and that driver offers haptics, the battery level and the four Elite paddles. With stock firmware, tvOS and macOS classify the controller as a generic HID gamepad with neither haptics nor battery level.
 
-On an Apple TV 4K (3rd generation) with tvOS 27.2.1, GameController reports the category `Xbox One` for the patched controller. It lists the haptic localities `All, Default, Handles, Left Handle, Right Handle, Left Trigger, Right Trigger, Triggers`, the battery level and `Paddle 1`–`4`. Core Haptics drives the motors from every locality. Every input maps to its Xbox element, and the four back buttons press the paddles. On macOS 27.2.1, GameController lists the same category, localities and paddles, and every input except Home reaches apps.
+On an Apple TV 4K (3rd generation) with tvOS 27.2.1, GameController reports the category `Xbox One` for the patched controller. It lists the haptic localities `All, Default, Handles, Left Handle, Right Handle, Left Trigger, Right Trigger, Triggers`, the battery level and `Paddle 1`–`4`. Core Haptics drives the motors. Every input maps to its Xbox element, and the four back buttons press the paddles. On macOS 27.2.1, GameController lists the same category, localities and paddles, every input except Home reaches apps, and Core Haptics drives the motors from every locality.
 
 | Procedure | Tested on hardware |
 |---|---|
