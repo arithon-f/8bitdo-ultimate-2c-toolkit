@@ -1,0 +1,24 @@
+name: RumbleTest
+options:
+  bundleIdPrefix: com.craigmdennis
+  deploymentTarget:
+    tvOS: "26.0"
+settings:
+  SWIFT_VERSION: "5.0"
+  DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+  CODE_SIGN_STYLE: Automatic
+targets:
+  RumbleTest:
+    type: application
+    platform: tvOS
+    sources: [RumbleTest]
+    info:
+      path: RumbleTest/Info.plist
+      properties:
+        CFBundleDisplayName: Rumble Test
+        UILaunchScreen: {}
+        # Declares the app as controller-aware; lets a gamepad drive the focus UI.
+        GCSupportsControllerUserInteraction: true
+        GCSupportedGameControllers:
+          - ProfileName: ExtendedGamepad
+          - ProfileName: MicroGamepad
