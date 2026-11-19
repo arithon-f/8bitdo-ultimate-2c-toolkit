@@ -117,6 +117,7 @@ class ControllerNameTest(unittest.TestCase):
         "ringhook02.bin": "36bb496143d7a87026b50fe0220ef246c168c3b6b6251f4286b33edf1498222d",
         "rumble03.bin": "f4be669cb33f916fa8e494c6b7d77bd2c29d165fff7fee62ccf9b7952c6e092d",
         "ringhook03.bin": "c5c17678cb98c19b506922d7b7a33a82dfe50a9e144183eab2ed7d6ff4facd0d",
+        "battlog11.bin": "a928125ce55ea206b7c432f4c77b83f92ebfa2d532d8f5c1e2830d7d2e692244",   # 1.1: the battery log
         "wdog.bin": "ee8ef69d98f097cc6567ff6f16a29b5cf7fceedb6055bbf87db778fcdd2590a8",      # 1.0: Processor rest
         "stall.bin": "f4c60c286a6141864bc56fee16cd98f8d00e8e8845ba11269901874301bebe36",
         "hstall.bin": "6dd074c9b178b74f2391e6f72f0c86bb3e04258456ab86d89a03b96e8872f0e3",
@@ -310,6 +311,9 @@ class FromEarlierVersionsTest(unittest.TestCase):
         self.assertEqual(at(0x6020, len(recipes._blob("wdog.bin"))), recipes._blob("wdog.bin"))   # Processor rest's own code as before
         st = recipes.identify(img, **self.k)
         self.assertEqual((st.known, st.recipes), (True, tuple(sorted(self.FOUR + ["cpu_rest", "battery_log"]))))
+        with_11 = bytearray(img)   # 1.1's log, which unlocked the flash, still counts as installed
+        with_11[0x9964 - image.BASE:0x9CAC - image.BASE] = recipes._blob("battlog11.bin").ljust(0x9CAC - 0x9964, b"\0")
+        self.assertEqual(recipes.identify(bytes(with_11), **self.k).recipes, st.recipes)
         old = recipes.build(self.stock, self.FOUR + ["cpu_rest"], **self.k)   # what 1.0 installed
         self.assertEqual(recipes.identify(old, **self.k).recipes, tuple(sorted(self.FOUR + ["cpu_rest"])))
         ring_only = recipes.build(self.stock, KEYS + ["ring_5"], **self.k)    # the call as the ring alone has it

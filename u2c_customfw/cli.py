@@ -106,6 +106,13 @@ def _dongle_in_boot(f) -> bool:
         ch.close()
 
 
+def _check_shown(args, dongle: bool) -> None:
+    """The page says which device it asked about; another one connected since then gets nothing."""
+    shown = getattr(args, "device", None)
+    if shown and (shown == "dongle") != dongle:
+        raise Exit(2, f"The {'controller' if dongle else 'dongle'} the window showed isn't connected anymore, so nothing was written. Check again.")
+
+
 def _dongle_change(args, store, f, tweaks=(), source: str | None = None):
     """Install (with these tweaks) or restore (source "backup" or "stock") the dongle's bank A."""
     if f.mode == "dongle_paired":
@@ -307,7 +314,9 @@ def cmd_patch(args, store):
     need_accept(args, store)
     f = pick(("boot", "cable", "cable_360", "dongle", "dongle_paired"))
     keys = [k for k in args.tweaks.split(",") if k]
-    if f.mode.startswith("dongle") or _dongle_in_boot(f):
+    dongle = f.mode.startswith("dongle") or _dongle_in_boot(f)
+    _check_shown(args, dongle)
+    if dongle:
         if any(k not in dng.TWEAKS for k in keys):
             raise Exit(2, f"The dongle's tweaks are {', '.join(dng.TWEAKS)}. Nothing was written.")
         return _dongle_change(args, store, f, keys)
@@ -326,7 +335,9 @@ def cmd_patch(args, store):
 def cmd_restore(args, store):
     need_accept(args, store)
     f = pick(("boot", "cable", "cable_360", "dongle", "dongle_paired"))
-    if f.mode.startswith("dongle") or _dongle_in_boot(f):
+    dongle = f.mode.startswith("dongle") or _dongle_in_boot(f)
+    _check_shown(args, dongle)
+    if dongle:
         return _dongle_change(args, store, f, source=args.source)
     stock = None
     if args.source == "stock":   # a backup's checked copy of 1.09 first; else download, before update mode, so a failed

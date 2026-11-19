@@ -363,10 +363,11 @@ def make_server(store: Path, port: int = 0):
                 return self.send(200, json.dumps({"text": report_mod.report(cli.find(), None, report_mod.log_tail(store), report_mod.clean_extras(req))}))
             if route in ("/api/patch", "/api/restore") and not state.accepted(store):
                 return self.send(403, json.dumps({"error": "Accept the disclaimer first."}))
+            shown = req.get("device") if req.get("device") in ("controller", "dongle") else None   # the device the page asked about
             params = {"/api/backup": ("backup", {}),
-                      "/api/patch": ("patch", dict(tweaks=",".join(req.get("tweaks", [])), download=req.get("base") == "download",
+                      "/api/patch": ("patch", dict(tweaks=",".join(req.get("tweaks", [])), download=req.get("base") == "download", device=shown,
                                                     write=bool(req.get("write")))),
-                      "/api/restore": ("restore", dict(source=req.get("source", "backup"), write=bool(req.get("write")),
+                      "/api/restore": ("restore", dict(source=req.get("source", "backup"), write=bool(req.get("write")), device=shown,
                                                         expect=req.get("backup") if isinstance(req.get("backup"), str) else None,
                                                         force_unknown=bool(req.get("force_unknown"))))}.get(route)
             if params is None:

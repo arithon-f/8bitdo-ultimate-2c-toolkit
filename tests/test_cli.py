@@ -175,6 +175,17 @@ class CliTest(unittest.TestCase):
                 cli.cmd_restore(args, self.tmp)
         self.assertIn("isn't the one shown", e.exception.msg)
 
+    def test_a_write_refuses_another_device_than_the_one_shown(self):
+        for cmd, extra in ((cli.cmd_patch, dict(tweaks="cable_360")), (cli.cmd_restore, dict(source="stock"))):
+            args = SimpleNamespace(**{**dict(write=True, accept_disclaimer=True, tweaks="", backup=None, download=False, source="backup", expect=None,
+                                             force_unknown=False, device="dongle", say=lambda t: None, hint=lambda t: None, progress=None), **extra})
+            dev = SimBoot(self.flash)
+            with mock.patch.object(cli, "find", lambda: [found("boot", 0x3208, 0x8C)]), mock.patch.object(cli, "open_channel", lambda i, rid: dev):
+                with self.assertRaises(cli.Exit) as e:
+                    cmd(args, self.tmp)
+            self.assertIn("The dongle the window showed isn't connected anymore, so nothing was written.", e.exception.msg)
+            self.assertEqual([o for o in dev.ops if o[0] in ("erase", "write")], [])
+
     def test_restore_takes_no_file_or_download_argument(self):
         for extra in (["controller-20260101-000000.bin"], ["--download"]):
             with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):

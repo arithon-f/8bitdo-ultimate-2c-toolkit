@@ -122,13 +122,14 @@ void rest_poll(void)
  * (0x843415), and flags: 1 external power (PD0; never set now, as nothing is written on external power, which also keeps
  * a backup by cable steady), 2 connected over Bluetooth, 4 a rumble hold running. Flash keeps it through power-offs; a
  * new power-on goes on after the last record. It stops when the area is full. Its state sits in the free part of the
- * Home ring's state, zeroed at boot. */
+ * Home ring's state, zeroed at boot. It doesn't unlock the flash: the protection stock sets at boot (0xa388) is read
+ * as covering the lower 256 KB (bootloader and bank A), not the log, and only a new boot sets it again, so 1.1's unlock
+ * before each record left it off for the rest of every battery session. */
 #define LOG_START 0x53000
 #define LOG_END 0x73000
 #define LOG ((volatile u32 *)0x841670) /* +0 next free record (0 until found), +4 100 ms calls this minute, +8 minutes since
                                         * power-on, +12 this power-on's number */
 #define FLASH_WRITE(a, n, d) ((void (*)(u32, u32, u8 *))*(volatile u32 *)0x842e3c)(a, n, d)
-void flash_unlock(void);       /* 0xbd00 */
 int stock_connected_bt(void);  /* 0xa28c */
 
 __attribute__((noinline)) void battlog_poll(void)
@@ -152,7 +153,6 @@ __attribute__((noinline)) void battlog_poll(void)
 	r[0] = l[3] | (*(volatile u32 *)0x842e00 >> 5 & 0xff) << 8 | l[2] << 16;
 	r[1] = (*(volatile u32 *)0x843424 & 0xffff) | *(volatile u8 *)0x843415 << 16
 	       | ((stock_connected_bt() ? 2 : 0) | (MOTOR_HOLD ? 4 : 0)) << 24;
-	flash_unlock();
 	FLASH_WRITE(a, 8, (u8 *)r);
 	l[0] = a + 8;
 }

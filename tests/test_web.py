@@ -189,13 +189,17 @@ class WebTest(unittest.TestCase):
 
         def fake(args, store):
             seen.update(tweaks=args.tweaks, write=args.write, download=args.download, source=args.source,
-                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None))
+                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None), device=args.device)
         state.accept(self.store)
         jobs.ACTIONS["patch"] = fake
         jobs.ACTIONS["restore"] = fake
         self.assertEqual(self.call("POST", "/api/patch", {"tweaks": ["bt_xbox", "cable_360"], "base": "download", "write": True})[0], 202)
         self.events()
-        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None))
+        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None, device=None))
+        for sent, got in (("dongle", "dongle"), ("controller", "controller"), ("printer", None)):
+            self.call("POST", "/api/patch", {"tweaks": [], "device": sent})
+            self.events()
+            self.assertEqual(seen["device"], got)
         self.assertEqual(self.call("POST", "/api/restore", {"source": "stock", "write": False})[0], 202)
         self.events()
         self.assertEqual((seen["source"], seen["write"], seen["force_unknown"]), ("stock", False, False))

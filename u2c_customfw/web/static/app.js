@@ -388,43 +388,44 @@ $("log-toggle").onclick = () => { const l = $("log"); l.hidden = !l.hidden; $("l
 
 $("backup").onclick = () => runJob("Backing up…", "/api/backup", null, "Backup saved");
 const onDongle = () => !!fw && fw.device === "dongle";
+const shownDevice = () => (onDongle() ? "dongle" : "controller");   // taken before a dialog: the core refuses another device
 const restarts = () => (st && st.devices.some((d) => d.mode === "boot") ? "The app restarts the controller afterwards."
   : "The app restarts the controller into update mode to write it, then restarts it again.");
 const dongleTweaks = () => dongleBoxes().filter((x) => x.checked).map((x) => x.value);
-$("patch-dry").onclick = () => runJob("Checking…", "/api/patch", { tweaks: onDongle() ? dongleTweaks() : tweaks(), base, write: false }, "Check passed");
+$("patch-dry").onclick = () => runJob("Checking…", "/api/patch", { tweaks: onDongle() ? dongleTweaks() : tweaks(), base, write: false, device: shownDevice() }, "Check passed");
 $("patch-write").onclick = async () => {
   if (onDongle()) {
     const chosen = dongleBoxes().filter((x) => x.checked).map((x) => x.parentElement.lastElementChild.firstChild.textContent);
     if (await ask("Install this on the dongle?", "This changes the dongle's firmware. The app restarts the dongle into update mode to write it, then restarts it again. Installing modified firmware probably voids the dongle's warranty.",
       chosen.length ? chosen : ["No tweaks: the original firmware 1.03"], "Install", "install"))
-      runJob("Installing…", "/api/patch", { tweaks: dongleTweaks(), write: true }, "Installed on the dongle");
+      runJob("Installing…", "/api/patch", { tweaks: dongleTweaks(), write: true, device: "dongle" }, "Installed on the dongle");
     return;
   }
   if (await ask("Install these tweaks?", `This changes the controller's firmware. ${restarts()} Installing modified firmware probably voids the controller\'s warranty.`, tweakTitles(), "Install", "install"))
-    runJob("Installing…", "/api/patch", { tweaks: tweaks(), base, write: true }, "Tweaks installed");
+    runJob("Installing…", "/api/patch", { tweaks: tweaks(), base, write: true, device: "controller" }, "Tweaks installed");
 };
-$("restore-backup-dry").onclick = () => runJob("Checking…", "/api/restore", { source: "backup", backup: fw.restore_backup.name, write: false }, "Check passed");
-$("restore-stock-dry").onclick = () => runJob("Checking…", "/api/restore", { source: "stock", write: false }, "Check passed");
+$("restore-backup-dry").onclick = () => runJob("Checking…", "/api/restore", { source: "backup", backup: fw.restore_backup.name, write: false, device: shownDevice() }, "Check passed");
+$("restore-stock-dry").onclick = () => runJob("Checking…", "/api/restore", { source: "stock", write: false, device: shownDevice() }, "Check passed");
 $("restore-backup").onclick = async () => {
-  const b = fw.restore_backup;
+  const b = fw.restore_backup, device = shownDevice();
   if (await ask("Restore your backup?", `This replaces the ${onDongle() ? "dongle" : "controller"}'s firmware with your backup “${b.name}”, made on ${b.taken}, which has ${b.firmware}.${onDongle() ? "" : " " + restarts()}`, [], "Restore"))
-    runJob("Restoring…", "/api/restore", { source: "backup", backup: b.name, write: true }, "Backup restored");
+    runJob("Restoring…", "/api/restore", { source: "backup", backup: b.name, write: true, device }, "Backup restored");
 };
 $("restore-stock").onclick = async () => {
   if (onDongle()) {
     if (await ask("Restore the original firmware 1.03?", "This replaces the dongle's firmware with 8BitDo's original 1.03, made from your backup and checked against its known checksum. The app restarts the dongle into update mode to write it.", [], "Restore", "danger"))
-      runJob("Restoring…", "/api/restore", { source: "stock", write: true }, "Original firmware restored");
+      runJob("Restoring…", "/api/restore", { source: "stock", write: true, device: "dongle" }, "Original firmware restored");
     return;
   }
   if (await ask("Restore the original firmware 1.09?", `This replaces the controller's firmware with 8BitDo's original 1.09, taken from one of your backups or, if none has it, downloaded from 8BitDo. ${restarts()} Your settings, pairings and calibration stay as they are.`, [], "Restore", "danger"))
-    runJob("Restoring…", "/api/restore", { source: "stock", write: true }, "Original firmware restored");
+    runJob("Restoring…", "/api/restore", { source: "stock", write: true, device: "controller" }, "Original firmware restored");
 };
 $("force-open").onclick = () => {
   const d = $("force"), tick = $("force-understand"), yes = $("force-yes");
   tick.checked = false; yes.disabled = true;
   tick.onchange = () => { yes.disabled = !tick.checked; };
   $("force-no").onclick = () => d.close();
-  yes.onclick = () => { d.close(); runJob("Installing…", "/api/restore", { source: "stock", write: true, force_unknown: true }, "Original firmware installed"); };
+  yes.onclick = () => { d.close(); runJob("Installing…", "/api/restore", { source: "stock", write: true, force_unknown: true, device: "controller" }, "Original firmware installed"); };
   d.showModal();
 };
 $("report-open").onclick = async () => {
