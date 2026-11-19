@@ -9,7 +9,7 @@ from unittest import mock
 
 from u2c_customfw import cli, transport
 from u2c_customfw.firmware import image, recipes
-from u2c_customfw.ops import backup as bkp, devices, patch, plan, probe, report, restore
+from u2c_customfw.ops import backup as bkp, battlog, devices, patch, plan, probe, report, restore
 from u2c_customfw.ops.plan import OpError
 from u2c_customfw.sim import SimApp, SimBoot
 
@@ -366,6 +366,12 @@ class RestoreTest(Base):
             self.assertEqual(sent[0][0], lo)
             self.assertTrue(all(b[0] == a[1] or self.flash[a[1]:b[0]] == b"\xff" * (b[0] - a[1]) for a, b in zip(sent, sent[1:])))
         self.assertEqual(bytes(dev.f[0x19000:image.CONFIG_START]), self.flash[0x19000:image.CONFIG_START])
+
+    def test_a_backup_restore_leaves_the_battery_log_alone(self):
+        f = bytearray(self.flash)
+        f[battlog.START:battlog.START + 16] = bytes(range(16))   # records written since the backup
+        f[battlog.END - 8:battlog.END] = bytes(8)
+        self.assertEqual(restore.plan_restore(SimBoot(bytes(f)), self.backup, "backup", None).other_sectors, [])
 
     def test_restore_accepts_an_unknown_bank_a(self):
         dev = self.damaged()

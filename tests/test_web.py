@@ -189,13 +189,17 @@ class WebTest(unittest.TestCase):
 
         def fake(args, store):
             seen.update(tweaks=args.tweaks, write=args.write, download=args.download, source=args.source,
-                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None), names=(args.bt_name, args.cable_name, args.xinput_name, args.dinput_name))
+                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None), names=(args.bt_name, args.cable_name, args.xinput_name, args.dinput_name), device=args.device)
         state.accept(self.store)
         jobs.ACTIONS["patch"] = fake
         jobs.ACTIONS["restore"] = fake
         self.assertEqual(self.call("POST", "/api/patch", {"tweaks": ["bt_xbox", "cable_360"], "base": "download", "write": True})[0], 202)
         self.events()
-        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None, names=(None, None, None, None)))
+        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None, names=(None, None, None, None), device=None))
+        for sent, got in (("dongle", "dongle"), ("controller", "controller"), ("printer", None)):
+            self.call("POST", "/api/patch", {"tweaks": [], "device": sent})
+            self.events()
+            self.assertEqual(seen["device"], got)
         self.call("POST", "/api/patch", {"tweaks": ["bt_xbox", "cable_360"], "names": {"bt_xbox": "My Pad", "cable_360": "Wired", "dim_leds": "x"}})
         self.events()
         self.assertEqual(seen["names"], ("My Pad", "Wired", None, None))   # only the two names there are

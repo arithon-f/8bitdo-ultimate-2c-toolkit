@@ -213,7 +213,8 @@ def _make() -> dict[str, Recipe]:
             Edit(REST_FLAG, b"\1"),
         ), requires_group="ring"),
         Recipe("battery_log", "Battery log", ("cpu_rest",), (   # installed with Processor rest, never shown
-            Edit(0x9964, _blob("battlog.bin").ljust(0x9CAC - 0x9964, b"\0")),   # log_main_poll and battlog_poll, in the dead soft-float subtraction
+            Edit(0x9964, _blob("battlog.bin").ljust(0x9CAC - 0x9964, b"\0"),   # log_main_poll and battlog_poll, in the dead soft-float subtraction
+                 accepts=(_blob("battlog11.bin").ljust(0x9CAC - 0x9964, b"\0"),)),   # 1.1's, which unlocked the flash before each record
             Edit(0xA484, _blob("loghook.bin")),                  # the main loop's 100 ms call: the log first, then rest_main_poll
         )),
         Recipe("ble_interval", "Bluetooth connection request of 12.5 ms", (), (
