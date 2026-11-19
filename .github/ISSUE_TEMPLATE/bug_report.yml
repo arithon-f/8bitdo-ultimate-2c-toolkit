@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in the app or the firmware doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please don't attach backups, MAC addresses, serial numbers or pairing data. If they're needed, they can be sent to github@arithon.org.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: macOS or Linux version, and Apple silicon or Intel.
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - Controller
+        - Dongle
+        - Both
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      multiple: true
+      options:
+        - Cable
+        - Bluetooth
+        - 2.4 GHz dongle
+        - Update mode
+  - type: textarea
+    id: report
+    attributes:
+      label: Diagnostics report
+      description: The report from the Diagnostics tab, or the output of the command you ran.
+      render: text

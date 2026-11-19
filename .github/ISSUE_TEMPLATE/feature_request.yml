@@ -1,0 +1,19 @@
+name: Feature request
+description: An idea for the Ultimate 2C or its dongle.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: This project covers the Ultimate 2C Wireless and its dongle only. Firmware changes are merged after they're tested on the maintainer's own controller; see CONTRIBUTING.md.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like
+      description: What it should do, and why it's useful.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Games or apps where it matters, related projects, or notes from your own testing.
