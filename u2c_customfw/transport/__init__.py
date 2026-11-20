@@ -15,6 +15,7 @@ class DeviceInfo:
     name: str
     handle: object
     version: int = 0   # bcdDevice
+    manufacturer: str = ""   # "Microsoft" on a real Xbox controller, which has the 2C's Xbox IDs over Bluetooth
 
 
 class Channel(Protocol):

@@ -322,3 +322,11 @@ D-input `2dc8:301c` bcdDevice `0x0001` with the D-input name ("8BitDo Ultimate 2
 back, byte for byte the bank from before. D-input also worked with the controller on 1.2 and on the original 1.09. Turning the
 controller on from off with B + Home leaves it in X-input; it takes B + Home held until it turns off, then Home with B still
 held (now in tweaks.md and the FAQ).
+
+# Diagnostics with a real Xbox controller beside the 2C (2026-11-20)
+
+Carlos's 2C on 1.2 and his real Xbox Wireless Controller (`045e:0b13`, manufacturer Microsoft) over Bluetooth at once, with
+the dongle plugged in. Before the fix the Diagnostics tab followed whichever pad was used last, the Home ring went to the
+real Xbox, and the Firmware tab read again and again (the core listed one of the two, in whatever order macOS gave them).
+After it: the tab stays on the 2C, rumble, Direct Report and the Home ring level reach the 2C only, and the Firmware tab
+reads once. A real Xbox controller is told apart by its manufacturer, which the 2C doesn't report.

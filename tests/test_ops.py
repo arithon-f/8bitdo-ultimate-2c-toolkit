@@ -649,6 +649,15 @@ class DevicesTest(unittest.TestCase):
                              ["cable", "cable_360", "boot", "dongle", "bluetooth_xbox", "bluetooth"])
 
 
+    def test_a_real_xbox_controller_beside_the_2c_is_left_out(self):
+        bt = lambda name, maker: transport.DeviceInfo(0x045E, 0x0B13, 1, "Bluetooth Low Energy", name, name, manufacturer=maker)
+        ours, real = bt("8BitDo Ultimate 2C (X/S)", ""), bt("Xbox Wireless Controller 4416224FCCC2", "Microsoft")
+        for listing in ([ours, real], [real, ours]):   # macOS lists them in any order
+            with mock.patch.object(transport, "list_devices", lambda: listing):
+                self.assertEqual([(f.mode, f.info.name) for f in devices.find()], [("bluetooth_xbox", "8BitDo Ultimate 2C (X/S)")])
+        with mock.patch.object(transport, "list_devices", lambda: [real]):
+            self.assertEqual(devices.find(), [])   # a real Xbox controller alone isn't the 2C
+
     def test_two_devices_of_the_same_mode_are_both_listed(self):
         d = lambda h: transport.DeviceInfo(0x2DC8, 0x3208, 0x8C, "USB", "x", h)
         with mock.patch.object(transport, "list_devices", lambda: [d("a"), d("b")]):

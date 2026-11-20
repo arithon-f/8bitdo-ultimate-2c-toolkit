@@ -17,6 +17,7 @@ MODES = (
 
 
 DONGLE_BCD = 0x0103   # the patched dongle's bcdDevice; the controller by cable keeps 0x0114, so the same 045e:028e tells them apart
+REAL_XBOX = "Microsoft"   # a real Xbox controller's manufacturer: it has the 2C's Xbox IDs over Bluetooth, and isn't ours
 
 
 @dataclass
@@ -33,7 +34,7 @@ def find() -> list[Found]:
         for vendor, product, page, mode in MODES:
             if d.vendor == vendor and d.product == product and (page is None or d.usage_page == page):
                 if mode.startswith("bluetooth"):
-                    if "Bluetooth" not in d.transport or any(f.mode == mode for f in out):
+                    if "Bluetooth" not in d.transport or any(f.mode == mode for f in out) or d.manufacturer == REAL_XBOX:
                         continue
                 out.append(Found(d, "dongle_paired" if mode == "cable_360" and d.version == DONGLE_BCD else mode))
     return out
