@@ -12,6 +12,7 @@ class SimApp:
     def __init__(self, flash: bytes, needs_session=False, needs_unprotect=False):
         self.flash, self.open, self.unprot, self.sent = bytes(flash), not needs_session, needs_unprotect, []
         self.drop_saves, self.mapping, self.dead_zone_off, self.reloading_until = False, {}, None, 0.0
+        self.battery = (77, 3870, 0, 1)   # what 81 05 00 5b answers: percent, mV, charged, external power; None before 1.2
         kept = settings_record.parse(self.flash[settings_record.SECTOR:settings_record.SECTOR + settings_record.SIZE]) if len(self.flash) > 0x7A000 else None
         self.fields = [(kept or settings_record.DEFAULTS)[f.name] for f in settings_record.FIELDS]  # the settings in its RAM
 
@@ -35,6 +36,11 @@ class SimApp:
         cmd = req[3]
         if 0x54 <= cmd <= 0x58 and time.monotonic() < self.reloading_until:
             return None   # settings.c ignores them until its next 100 ms pass has read the record again
+        if cmd == 0x5B:
+            if self.battery is None:
+                return None
+            pct, mv, full, ext = self.battery
+            return bytes([0x02, 0x5B, pct, mv & 0xFF, mv >> 8, full, ext]).ljust(64, b"\0")   # as the controller sends it
         if cmd == 0x21:
             self.open = not self.unprot
             return bytes([0x02, 0x22]).ljust(64, b"\0")

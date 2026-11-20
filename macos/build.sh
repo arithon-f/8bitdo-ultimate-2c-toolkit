@@ -28,7 +28,7 @@ rsync -a --exclude __pycache__ --exclude diagsim.js u2c_customfw "$app/Contents/
 cp DISCLAIMER.md LICENSE "$app/Contents/Resources/app/"
 cp macos/AppIcon.icns "$app/Contents/Resources/"  # rendered from macos/icon.svg
 sed "s/@VERSION@/$version/g" macos/Info.plist > "$app/Contents/Info.plist"
-swiftc -O -target "$arch-apple-macos13.0" -o "$app/Contents/MacOS/u2c-customfw" macos/main.swift macos/Diagnostics.swift -framework AppKit -framework WebKit -framework IOKit -framework GameController -framework CoreHaptics
+swiftc -O -target "$arch-apple-macos13.0" -o "$app/Contents/MacOS/u2c-customfw" macos/main.swift macos/Diagnostics.swift macos/MenuBattery.swift -framework AppKit -framework WebKit -framework IOKit -framework GameController -framework CoreHaptics
 codesign --force --deep -s - "$app"
 zip="firmware-toolkit-$version-macos-$arch.zip"
 (cd "$out" && rm -f "$root/dist/$zip" && ditto -c -k --keepParent "Firmware Toolkit.app" "$root/dist/$zip")

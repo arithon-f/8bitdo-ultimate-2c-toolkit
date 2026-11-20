@@ -6,7 +6,8 @@ bank A by the hash of stock with every edit region zeroed. Addresses are image a
 """
 import hashlib
 import struct
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import image
@@ -16,6 +17,8 @@ BLOBS = Path(__file__).parent / "blobs"
 NAME = b"8BitDo Ultimate 2C (X/S)"
 OLD_NAME = b"8BitDo Ultimate 2C (One)"  # what versions before 0.2 installed: still recognised, never written
 OLD_NAME_LEN = 27
+CABLE_NAME = "8BitDo Ultimate 2C (Wired)"   # by cable, in the same style as NAME: a suggestion, written only if chosen
+STOCK_CABLE_NAME = "8BitDo Ultimate 2C Wireless Controller"   # 8BitDo's, which the dongle uses too; still recognised
 PACKER_SLOT = (0xB908, 0xBAD4)
 RING_LEVELS = (("ring_off", "Home ring: off", 0), ("ring_0_1", "Home ring: 0.1 %", 1), ("ring_1", "Home ring: 1 %", 10),
                ("ring_5", "Home ring: 5 %", 50), ("ring_25", "Home ring: 25 %", 250),
@@ -40,10 +43,24 @@ class Edit:
     new: bytes
     superseded_by: str | None = None  # recipe whose edit takes over this region when it is present
     accepts: tuple[bytes, ...] = ()   # earlier contents of this edit that still count as installed
+    text: Callable[[str], bytes] | None = None   # a name edit: its bytes for a name (new is the default name's)
 
     @property
     def size(self) -> int:
         return len(self.new)
+
+
+@dataclass(frozen=True)
+class NameSlot:
+    """A name a recipe writes, chosen by the person: only text goes in, of printable ASCII, and each edit that depends on
+    it (a length, a second copy) is written from it. Firmware holds a chosen name when the slot reads back as one and
+    every one of the recipe's name edits is what that name gives."""
+    label: str
+    default: str
+    max_len: int
+    at: tuple[int, int]                    # the region the name is read back from
+    read: Callable[[bytes], str | None]    # its text, or None if it isn't one written by this slot
+    suggestion: str = ""                   # offered in the app; never written unless chosen
 
 
 @dataclass(frozen=True)
@@ -55,6 +72,7 @@ class Recipe:
     group: str | None = None  # at most one recipe of a group can be installed
     requires_group: str | None = None  # one recipe of this group must be installed too
     earlier_form_of: str | None = None  # how an earlier version installed that recipe: recognised, not installable
+    name: NameSlot | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +81,7 @@ class State:
     recipes: tuple[str, ...] = ()
     outdated: bool = False  # has a tweak in the form an earlier version installed it
     older: bool = False     # a tweak's code is an earlier version's (an accepted form): installing again updates it
+    names: dict[str, str] = field(default_factory=dict)  # recipe -> the name it holds, for the recipes with a NameSlot
 
 
 def _blob(name: str) -> bytes:
@@ -73,9 +92,41 @@ def _u32(v: int) -> bytes:
     return struct.pack("<I", v)
 
 
+def _usb_string(text: str) -> bytes:
+    return bytes([2 + 2 * len(text), 3]) + text.encode("utf-16-le")
+
+
+def valid_name(text, max_len: int) -> bool:
+    return (isinstance(text, str) and 0 < len(text) <= max_len and all(" " <= c <= "~" for c in text)
+            and text == text.strip())
+
+
+def _read_bt_name(region: bytes) -> str | None:   # the GATT name: the text, then zeros
+    text = region.split(b"\0", 1)[0]
+    if region[len(text):] != bytes(len(region) - len(text)):
+        return None
+    text = text.decode("latin-1")
+    return text if valid_name(text, OLD_NAME_LEN) else None
+
+
+def _read_usb_string(region: bytes) -> str | None:   # a string descriptor, then zeros
+    n = region[0]
+    if region[1] != 3 or n % 2 or not 4 <= n <= len(region) or region[n:] != bytes(len(region) - n):
+        return None
+    units = [int.from_bytes(region[i:i + 2], "little") for i in range(2, n, 2)]
+    text = "".join(map(chr, units))
+    return text if valid_name(text, (len(region) - 2) // 2) else None
+
+
 def _make() -> dict[str, Recipe]:
     pad = bytes(OLD_NAME_LEN - len(NAME))
     slot = PACKER_SLOT[1] - PACKER_SLOT[0]
+    bt_name = lambda n: n.encode().ljust(OLD_NAME_LEN, b"\0")
+    scan_name = lambda n: bytes([len(n) + 1, 9]) + n.encode().ljust(OLD_NAME_LEN, b"\0")
+    cable_name = lambda n: _usb_string(n).ljust(0x4E, b"\0")
+
+    def named(addr, text, **kw):
+        return Edit(addr, text(DEFAULT_NAMES[addr]), text=text, **kw)
     return {r.key: r for r in (
         Recipe("bt_xbox", "Xbox Series X|S controller over Bluetooth", (), (
             Edit(PACKER_SLOT[0], _blob("packer.bin").ljust(slot, b"\0")),
@@ -87,12 +138,11 @@ def _make() -> dict[str, Recipe]:
             Edit(0x173C0, bytes.fromhex("025e04130b0905")),      # PnP ID: USB-IF, 045e:0b13, v0509
             Edit(0x18098, bytes.fromhex("0302")),                # output report reference: ID 3, output
             Edit(0x172C0, bytes.fromhex("c403")),                # GAP appearance: gamepad
-            Edit(0x172DC, NAME + pad, accepts=(OLD_NAME + pad,)),  # GATT device name
-            Edit(0x17488, _u32(len(NAME))),                      # ... and its length
-            Edit(0x17254, bytes([len(NAME) + 1, 9]) + NAME + pad,
-                 accepts=(bytes([len(OLD_NAME) + 1, 9]) + OLD_NAME + pad,)),  # scan response name
-            Edit(0xA214, bytes([len(NAME) + 2, 0xA1])),          # scan response length immediate
-        )),
+            named(0x172DC, bt_name, accepts=(OLD_NAME + pad,)),   # GATT device name
+            named(0x17488, lambda n: _u32(len(n))),               # ... and its length
+            named(0x17254, scan_name, accepts=(bytes([len(OLD_NAME) + 1, 9]) + OLD_NAME + pad,)),  # scan response name
+            named(0xA214, lambda n: bytes([len(n) + 2, 0xA1])),   # scan response length immediate
+        ), name=NameSlot("Bluetooth name", NAME.decode(), OLD_NAME_LEN, (0x172DC, OLD_NAME_LEN), _read_bt_name)),
         Recipe("bt_rumble", "Rumble over Bluetooth", ("bt_xbox",), (
             Edit(0x18390, _blob("rumble.bin").ljust(0x70, b"\0"),
                  accepts=(_blob("rumble02.bin").ljust(0x70, b"\0"), _blob("rumble03.bin").ljust(0x70, b"\0"))),
@@ -106,7 +156,11 @@ def _make() -> dict[str, Recipe]:
         Recipe("cable_360", "Xbox 360 controller over cable", (), (
             Edit(0x17994, bytes.fromhex("ffffff")),              # class, subclass, protocol
             Edit(0x17998, bytes.fromhex("5e048e02")),            # 045e:028e
-        )),
+            # the cable's USB product string, CABLE_NAME unless another is chosen; firmware with 8BitDo's name here (the
+            # dongle's too) reads as this tweak as well. The "Wired Controller" one at 0x179f4 is the battery-less 2C Wired's, picked at 0xe902
+            named(0x1792C, cable_name),
+            named(0xE91C, lambda n: bytes([2 + 2 * len(n)])),     # ... and the length it's sent with: movs r3, #n
+        ), name=NameSlot("Name over cable", STOCK_CABLE_NAME, 38, (0x1792C, 0x4E), _read_usb_string, CABLE_NAME)),
         Recipe("dim_leds", "Dimmer LEDs", (), (
             Edit(0x7738, _blob("led.bin")),                      # main_tick, run from RAM at 0x1738
             Edit(0xA43C, _blob("hook.bin")),                     # main loop calls main_tick instead of 0xfaa0
@@ -114,12 +168,13 @@ def _make() -> dict[str, Recipe]:
         *(Recipe(key + at, title, (), (
             Edit(0xA3FA, b"\0"),                                 # the ring doesn't light up at startup
             Edit(0xD4F0, _blob(f"ringhook{form}.bin")),          # LED task calls ring_tick for the ring
-            Edit(0xF83C, _blob(f"vhooka{form}.bin")),            # vendor commands reach ring_vendor
-            Edit(0xF842, _blob(f"vhookb{form}.bin")),
+            Edit(0xF83C, _blob(f"vhooka{form}.bin"), accepts=() if form else (_blob("vhooka10.bin"),)),   # vendor commands reach ring_vendor (since 1.2 through the battery command)
+            Edit(0xF842, _blob(f"vhookb{form}.bin"), accepts=() if form else (_blob("vhookb10.bin"),)),
             Edit(0xA484, _blob(f"pollhook{form}.bin"), superseded_by="cpu_rest"),  # main loop samples the L4 + R4 chord; cpu_rest takes the call over
             Edit(0x7640, bytes(0x90)),                           # dead RAM code, now the ring's and settings' state
             Edit(0x76D0, level.to_bytes(2, "little")),           # the level installed
-            Edit(RING_CODE[0], _blob(f"ringtail{form}.bin").ljust(RING_CODE[1] - RING_CODE[0], b"\xff")),
+            Edit(RING_CODE[0], _blob(f"ringtail{form}.bin").ljust(RING_CODE[1] - RING_CODE[0], b"\xff"),
+                 accepts=() if form else tuple(_blob(f).ljust(RING_CODE[1] - RING_CODE[0], b"\xff") for f in ("ringtail10.bin", "ringtail12b.bin"))),   # 1.0-1.1.1's (alerts at 15 % and 5 %), 1.2 beta's (no battery command)
         ), "ring", earlier_form_of=key if form else None)
             for form, at in (("", ""), ("03", "@0.3")) for key, title, level in RING_LEVELS),
         *(Recipe(f"{key}@0.2", title, (), (
@@ -164,6 +219,12 @@ def _make() -> dict[str, Recipe]:
                  accepts=(_blob("battlog11.bin").ljust(0x9CAC - 0x9964, b"\0"),)),   # 1.1's, which unlocked the flash before each record
             Edit(0xA484, _blob("loghook.bin")),                  # the main loop's 100 ms call: the log first, then rest_main_poll
         )),
+        Recipe("battery_table", "Battery level from a measured discharge", (), (   # in every install, never shown
+            Edit(0x9CEC, _blob("battpct.bin").ljust(0x9D40 - 0x9CEC, b"\0")),   # battery_pct, in the dead count-leading-zeros and ffs
+            Edit(0xB5B6, _blob("hpcta.bin")),                    # 0xb5a8 jumps over stock's linear formula ...
+            Edit(0xB5C0, _blob("hpctb.bin")),                    # ... to the call that now gives the voltage to battery_pct
+            Edit(0xB62C, _u32(3300)),                            # 1 % without smoothing only below 3300 mV, not below 3499
+        )),
         Recipe("bt_plain_icon", "No keyboard icon in macOS's battery widget", ("bt_xbox",), (   # with bt_xbox, never shown
             # Telink's HID template has a Boot Keyboard Input Report (0x2a22, attribute 20), which makes macOS take the
             # controller for a keyboard (bluetoothd: "Detected keyboard LE HID"); a real Xbox pad has none. Another UUID,
@@ -186,6 +247,7 @@ def _make() -> dict[str, Recipe]:
     )}
 
 
+DEFAULT_NAMES = {a: NAME.decode() for a in (0x172DC, 0x17488, 0x17254, 0xA214)} | {a: STOCK_CABLE_NAME for a in (0x1792C, 0xE91C)}
 RECIPES: dict[str, Recipe] = _make()
 
 
@@ -219,9 +281,11 @@ def masked(img: bytes) -> bytes:
     return bytes(out)
 
 
-def build(stock: bytes, keys, stock_sha256=None, region_sha256=None, remainder_sha256=None) -> bytes:
-    """The app area: stock plus the chosen tweaks. Refuses anything but stock, an unknown tweak or a missing dependency."""
+def build(stock: bytes, keys, stock_sha256=None, region_sha256=None, remainder_sha256=None, names=None) -> bytes:
+    """The app area: stock plus the chosen tweaks, each name slot with its default or the name in names (recipe -> text;
+    "" is the default too). Refuses anything but stock, an unknown tweak, a missing dependency or a name that isn't one."""
     stock_sha, regions, _ = _constants(stock_sha256, region_sha256, remainder_sha256)
+    names = {k: v for k, v in (names or {}).items() if v != ""}
     if len(stock) != BANK_A_SIZE or _sha(stock) != stock_sha:
         raise RecipeError("the base image is not stock v1.09 bank A")
     keys = list(keys)
@@ -236,6 +300,13 @@ def build(stock: bytes, keys, stock_sha256=None, region_sha256=None, remainder_s
     groups = [RECIPES[k].group for k in keys if RECIPES[k].group]
     if len(groups) != len(set(groups)):
         raise RecipeError("choose only one Home ring level")
+    for k, text in names.items():
+        slot = RECIPES[k].name if k in RECIPES else None
+        if slot is None or k not in keys:
+            raise RecipeError(f"a name for {k}, which isn't being installed or has no name")
+        if not valid_name(text, slot.max_len):
+            raise RecipeError(f"The {slot.label.lower()} must be 1 to {slot.max_len} characters of letters, digits, spaces and "
+                              "punctuation, without spaces at either end.")
     base = whole(stock)
     img = bytearray(base)
     for key, r in RECIPES.items():  # recipe order: a dependent's edit lands over the one it supersedes
@@ -244,7 +315,7 @@ def build(stock: bytes, keys, stock_sha256=None, region_sha256=None, remainder_s
         for e in r.edits:
             if _sha(_region(base, e)) != regions[(e.addr, e.size)]:
                 raise RecipeError(f"{key}: stock bytes at {e.addr:#x} are not as expected")
-            img[e.addr - BASE:e.addr - BASE + e.size] = e.new
+            img[e.addr - BASE:e.addr - BASE + e.size] = e.text(names[key]) if e.text and key in names else e.new
     return bytes(img)
 
 
@@ -266,10 +337,18 @@ def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha
     if len(bank_a) != image.APP_SIZE or _sha(masked(bank_a)) != remainder:
         return State(False)
 
+    held = {}   # (addr, size) of each name edit -> the name its recipe's slot reads back, if every name edit agrees
+    for k, r in RECIPES.items():
+        text = r.name and r.name.read(bank_a[r.name.at[0] - BASE:r.name.at[0] - BASE + r.name.at[1]])
+        if text is not None and all(_region(bank_a, e) == e.text(text) for e in r.edits if e.text):
+            held |= {(e.addr, e.size): text for e in r.edits if e.text}
+
     accepted = set()   # (addr, size) of edits that hold an earlier version's bytes
 
     def edit_state(e):
         got = _region(bank_a, e)
+        if e.text and (e.addr, e.size) in held:   # a name, which may happen to equal 8BitDo's bytes here: as the recipe's other edits
+            return "any" if _sha(got) == regions[(e.addr, e.size)] else "new"
         if got == e.new or got in e.accepts:
             if got != e.new:
                 accepted.add((e.addr, e.size))
@@ -283,22 +362,25 @@ def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha
             return "stock"
         return "other"
 
-    plain = {k: [edit_state(e) for e in r.edits if e.superseded_by is None] for k, r in RECIPES.items()}
+    plain = {k: [x for x in (edit_state(e) for e in r.edits if e.superseded_by is None) if x != "any"] for k, r in RECIPES.items()}
     present = {k for k, s in plain.items() if s and all(x == "new" for x in s)}
     chosen = {RECIPES[k].group for k in present} - {None}
     for k, r in RECIPES.items():
         if r.group in chosen and k not in present:  # the group's other options share regions with the installed one
             continue
-        s = plain[k] + [edit_state(e) for e in r.edits if e.superseded_by is not None and e.superseded_by not in present]
+        s = plain[k] + [x for x in (edit_state(e) for e in r.edits if e.superseded_by is not None and e.superseded_by not in present) if x != "any"]
         if "other" in s or ("new" in s and "stock" in s):
             return State(False)
-    present = {k for k in RECIPES if all(
-        edit_state(e) == "new" for e in RECIPES[k].edits if e.superseded_by not in present)}
+    def holds(k):   # every edit it still owns is its own; one whose edits all equal 8BitDo's bytes is absent
+        s = [edit_state(e) for e in RECIPES[k].edits if e.superseded_by not in present]
+        return all(x in ("new", "any") for x in s) and not (s and all(x == "any" for x in s))
+    present = {k for k in RECIPES if holds(k)}
     for k in present:
         if any(need not in present for need in RECIPES[k].requires):
             return State(False)
         if RECIPES[k].requires_group and not any(RECIPES[o].group == RECIPES[k].requires_group for o in present):
             return State(False)
-    names = {RECIPES[k].earlier_form_of or k for k in present}
-    older = any((e.addr, e.size) in accepted for k in present for e in RECIPES[k].edits if e.superseded_by not in present)
-    return State(True, tuple(sorted(names)), any(RECIPES[k].earlier_form_of for k in present), older=older)
+    keys = {RECIPES[k].earlier_form_of or k for k in present}
+    chosen_names = {k: held[(e.addr, e.size)] for k in present for e in RECIPES[k].edits if e.text and (e.addr, e.size) in held}
+    older = any((e.addr, e.size) in accepted for k in present for e in RECIPES[k].edits if not e.text and e.superseded_by not in present)
+    return State(True, tuple(sorted(keys)), any(RECIPES[k].earlier_form_of for k in present), names=chosen_names, older=older)

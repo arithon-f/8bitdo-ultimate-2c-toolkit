@@ -104,16 +104,10 @@ class CliTest(unittest.TestCase):
         dev = SimBoot(self.flash)
         code, text = run(["patch", "--tweaks", "cable_360", "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
         self.assertEqual(code, 0, text)
-        self.assertEqual(recipes.identify(bytes(dev.f[0x6000:0x18400]), **K).recipes, ("ble_interval", "cable_360"))   # every install asks for 12.5 ms
+        self.assertEqual(recipes.identify(bytes(dev.f[0x6000:0x18400]), **K).recipes, ("battery_table", "ble_interval", "cable_360"))   # every install asks for 12.5 ms and has the battery table
         self.assertIn(("restart",), dev.ops)
         self.assertTrue(text.rstrip().endswith("Installed. The controller hasn't come back yet: if macOS asks whether to allow the accessory to connect, allow it. "
                                                "Otherwise unplug the controller, hold Home for about 12 seconds until it turns off, then connect it again. If you changed a Bluetooth tweak, remove the controller in System Settings → Bluetooth and pair it again."), text)
-
-    def test_backup_says_what_it_saved_in_a_sentence(self):
-        code, text = run(["backup", "--store", str(self.tmp)], [found("cable")], SimApp(self.flash))
-        self.assertEqual(code, 0, text)
-        self.assertRegex(text, r"Backup saved as “controller-\d{8}-\d{6}\.bin”\. The controller has the original firmware 1\.09\.")
-        self.assertIn("sha256 ", text)   # for the command line only
 
     def test_store_is_created_private(self):   # backups hold the pairings and calibration
         for make in (state.accept, state.lock_device):
@@ -123,9 +117,43 @@ class CliTest(unittest.TestCase):
                 f.close()
             self.assertEqual(store.stat().st_mode & 0o777, 0o700)
 
+    def test_patch_writes_the_names_given(self):
+        state.accept(self.tmp)
+        dev = SimBoot(self.flash)
+        code, text = run(["patch", "--tweaks", "bt_xbox,cable_360", "--bt-name", "My Pad", "--cable-name", "My Pad (USB)", "--write",
+                          "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 0, text)
+        self.assertEqual(recipes.identify(bytes(dev.f[0x6000:0x18400]), **K).names, {"bt_xbox": "My Pad", "cable_360": "My Pad (USB)"})
+        self.assertIn("Bluetooth name: “My Pad”. Name over cable: “My Pad (USB)”.", text)
+        bank = lambda: bytes(dev.f[0x6000:0x18400])
+        code, text = run(["patch", "--tweaks", "bt_xbox,cable_360,dim_leds", "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 0, text)   # reinstalling without names keeps the ones chosen
+        self.assertEqual(recipes.identify(bank(), **K).names, {"bt_xbox": "My Pad", "cable_360": "My Pad (USB)"})
+        code, text = run(["patch", "--tweaks", "bt_xbox,cable_360", "--bt-name", "", "--cable-name", "", "--write", "--store", str(self.tmp)],
+                         [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 0, text)   # "" puts the defaults back
+        self.assertEqual(recipes.identify(bank(), **K).names, {"bt_xbox": recipes.NAME.decode(), "cable_360": recipes.STOCK_CABLE_NAME})
+
+    def test_a_name_needs_its_tweak_and_must_be_text(self):
+        state.accept(self.tmp)
+        dev = SimBoot(self.flash)
+        code, text = run(["patch", "--tweaks", "bt_xbox", "--cable-name", "x", "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 2)
+        self.assertIn("--cable-name needs the cable_360 tweak", text)
+        code, text = run(["patch", "--tweaks", "cable_360", "--cable-name", "x" * 39, "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
+        self.assertEqual(code, 1)
+        self.assertIn("1 to 38 characters", text)
+        self.assertEqual([o for o in dev.ops if o[0] not in ("read", "identify")], [])
+
+    def test_backup_says_what_it_saved_in_a_sentence(self):
+        code, text = run(["backup", "--store", str(self.tmp)], [found("cable")], SimApp(self.flash))
+        self.assertEqual(code, 0, text)
+        self.assertRegex(text, r"Backup saved as “controller-\d{8}-\d{6}\.bin”\. The controller has the original firmware 1\.09\.")
+        self.assertIn("sha256 ", text)   # for the command line only
+
     def test_installing_what_is_there_writes_nothing_and_says_so(self):
         state.accept(self.tmp)
-        built = recipes.build(STOCK_A, ["cable_360", "ble_interval"], **K)
+        built = recipes.build(STOCK_A, ["cable_360", "ble_interval", "battery_table"], **K)
         f = bytearray(self.flash); f[image.BASE:image.APP_END] = built
         dev = SimBoot(bytes(f))
         code, text = run(["patch", "--tweaks", "cable_360", "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)

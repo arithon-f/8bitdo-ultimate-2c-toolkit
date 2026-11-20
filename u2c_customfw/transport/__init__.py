@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Device access: the only OS-specific part. A port adds a module with list_devices() and open_channel()."""
+"""Device access: the only OS-specific part. A port adds a module with list_devices() and open_channel() (macOS: iokit;
+Linux: linux, which combines hidraw and libusb)."""
 import sys
 from dataclasses import dataclass
 from typing import Protocol
@@ -14,6 +15,7 @@ class DeviceInfo:
     name: str
     handle: object
     version: int = 0   # bcdDevice
+    manufacturer: str = ""   # "Microsoft" on a real Xbox controller, which has the 2C's Xbox IDs over Bluetooth
 
 
 class Channel(Protocol):
@@ -23,13 +25,16 @@ class Channel(Protocol):
 
 
 class PermissionDenied(Exception):
-    """The OS refused to open the device (macOS: Input Monitoring not granted)."""
+    """The OS refused to open the device (macOS: Input Monitoring not granted; Linux: the udev rules aren't installed)."""
 
 
 def _backend():
     if sys.platform == "darwin":
         from . import iokit
         return iokit
+    if sys.platform.startswith("linux"):
+        from . import linux
+        return linux
     raise NotImplementedError(f"no transport for {sys.platform}: see docs/porting.md")
 
 

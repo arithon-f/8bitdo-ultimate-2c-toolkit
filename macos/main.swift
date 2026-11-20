@@ -4,10 +4,11 @@ import AppKit
 import IOKit.hid
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate, NSMenuItemValidation {
     var window: NSWindow!
     var web: WKWebView!
     let diagnostics = Diagnostics()
+    lazy var menuBattery = MenuBattery { [weak self] done in self?.getCore("/api/battery", done) ?? done(nil) }
     var core: Process?
     var buffer = Data()
     var coreURL: URL?   // the address the core printed, with its token
@@ -46,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKN
         window.makeKeyAndOrderFront(nil)
         installMenu()
         startCore()
+        menuBattery.apply()
     }
 
     static let helpItem = NSToolbarItem.Identifier("help")
@@ -74,6 +76,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKN
 
     func installMenu() {
         let main = NSMenu(), item = NSMenuItem(), menu = NSMenu()
+        let battery = menu.addItem(withTitle: "Show Battery in Menu Bar", action: #selector(toggleBattery(_:)), keyEquivalent: "")
+        battery.target = self
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quit U2C Firmware Toolkit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.submenu = menu
         main.addItem(item)
@@ -83,6 +88,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKN
         editItem.submenu = edit
         main.addItem(editItem)
         NSApp.mainMenu = main
+    }
+
+    @objc func toggleBattery(_ sender: NSMenuItem) { menuBattery.toggle() }
+
+    // The check mark follows the setting, also when the item was hidden from its own menu.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleBattery(_:)) { item.state = menuBattery.shown ? .on : .off }
+        return true
+    }
+
+    /// A GET to the core with the session's token, answered on URLSession's queue; nil until the core has started.
+    func getCore(_ path: String, _ done: @escaping ([String: Any]?) -> Void) {
+        guard let page = coreURL, var parts = URLComponents(url: page, resolvingAgainstBaseURL: false),
+              let token = parts.queryItems?.first(where: { $0.name == "token" })?.value else { return done(nil) }
+        parts.path = path
+        parts.queryItems = nil
+        guard let url = parts.url else { return done(nil) }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.setValue(token, forHTTPHeaderField: "X-Token")
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            done(data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+        }.resume()
     }
 
     func fail(_ message: String, title: String = "Could not start", advice: String = "") {
@@ -113,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate, WKN
             for line in text.split(separator: "\n") where line.hasPrefix("U2C_URL ") {
                 h.readabilityHandler = nil
                 if let url = URL(string: String(line.dropFirst("U2C_URL ".count)) + "&native=1") {
-                    DispatchQueue.main.async { self.coreURL = url; self.web.load(URLRequest(url: url)) }
+                    DispatchQueue.main.async { self.coreURL = url; self.web.load(URLRequest(url: url)); self.menuBattery.refresh() }
                 }
             }
         }

@@ -77,7 +77,7 @@ class ByCableTest(Base):
         self.unit = Controller(self.flash)
         code, text = go(["patch", "--tweaks", "cable_360", "--write"], self.unit, self.tmp)
         self.assertEqual(code, 0, text)
-        self.assertEqual(self.tweaked(), ("ble_interval", "cable_360"))
+        self.assertEqual(self.tweaked(), ("battery_table", "ble_interval", "cable_360"))
         self.assertEqual(self.unit.sent.count(ENTER), 1)
         self.assertEqual(self.unit.boot_cmds.count(7), 1)
         self.assertEqual(self.unit.mode, "cable_360")
@@ -113,7 +113,7 @@ class ByCableTest(Base):
 
     def test_nothing_to_change_leaves_it_running(self):
         built = bytearray(self.flash)
-        built[image.BASE:image.APP_END] = recipes.build(STOCK_A, ["cable_360", "ble_interval"], **K)
+        built[image.BASE:image.APP_END] = recipes.build(STOCK_A, ["cable_360", "ble_interval", "battery_table"], **K)
         self.unit = Controller(bytes(built))
         code, text = go(["patch", "--tweaks", "cable_360", "--write"], self.unit, self.tmp)
         self.assertEqual(code, 0, text)
@@ -169,7 +169,8 @@ class ByCableTest(Base):
         self.unit = Controller(self.flash, enters=False)
         code, text = go(["patch", "--tweaks", "cable_360", "--write"], self.unit, self.tmp)
         self.assertEqual(code, 2, text)
-        self.assertIn("The controller didn't restart into update mode, so nothing was written.", text)
+        self.assertIn("The controller didn't appear in update mode within 8 seconds, so nothing was written.", text)
+        self.assertIn("If the small light below the Home ring is blinking white, it is in update mode", text)
         self.assertIn("LB + RB", text)
         self.assertEqual(self.unit.ops, [])
 
@@ -211,7 +212,7 @@ class ByCableTest(Base):
         with mock.patch.object(Controller, "open", restart_fails):
             code, text = go(["patch", "--tweaks", "cable_360", "--write"], self.unit, self.tmp)
         self.assertEqual(code, 0, text)
-        self.assertEqual(self.tweaked(), ("ble_interval", "cable_360"))
+        self.assertEqual(self.tweaked(), ("battery_table", "ble_interval", "cable_360"))
         self.assertIn("Installed. The controller hasn't come back yet", text)
 
 

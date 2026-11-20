@@ -49,9 +49,13 @@ class Runner:
         self.running, self.writing, self.awake = False, False, None
         self.cond.notify_all()
 
+    WAIT = 3.0   # s: another short read in this core (the battery's, every 30 s) ends well within it
+
     def claim(self) -> bool:
-        """Take the device for a short read outside the job system (the firmware read); False if it is in use."""
+        """Take the device for a short read outside the job system (the firmware read); False if it is in use. A short
+        read already running in this core is waited for, so polling the battery doesn't turn the page's reads away."""
         with self.cond:
+            self.cond.wait_for(lambda: not self.running, timeout=self.WAIT)
             return self._take()
 
     def release(self) -> None:
@@ -60,13 +64,14 @@ class Runner:
 
     def start(self, name: str, **params) -> bool:
         with self.cond:
+            self.cond.wait_for(lambda: not self.running, timeout=self.WAIT)
             if not self._take():
                 return False
             self.events, self.writing = [], bool(params.get("write"))
         try:   # until the thread runs, nothing else frees the device
             if self.writing:
                 self.awake = keep_awake()
-            args = SimpleNamespace(**{**dict(write=False, tweaks="", backup=None, download=False, source="backup", expect=None,
+            args = SimpleNamespace(**{**dict(write=False, tweaks="", backup=None, download=False, source="backup", expect=None, bt_name=None, cable_name=None, xinput_name=None, dinput_name=None,
                                              accept_disclaimer=False, force_unknown=False, device=None), **params})
             log = get_logger(self.store)
             log.info("job %s %s", name, params)   # the page never sends a path

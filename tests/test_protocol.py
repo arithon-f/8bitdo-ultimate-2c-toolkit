@@ -27,6 +27,23 @@ class RingCommandTest(unittest.TestCase):
         self.assertTrue(all(len(r) == 64 for r in sent))
 
 
+class BatteryCommandTest(unittest.TestCase):
+    def test_the_battery_reply_is_read(self):
+        from u2c_customfw.sim import SimApp
+        dev = SimApp(bytes(0x80000))
+        dev.battery = (100, 4144, 1, 1)
+        self.assertEqual(app.battery(dev), {"percent": 100, "mv": 4144, "full": True, "external": True, "charging": False})
+        dev.battery = None   # firmware without the command answers nothing
+        self.assertIsNone(app.battery(dev))
+
+    def test_another_reply_is_not_taken_for_the_battery(self):
+        class Ch:
+            def xfer(self, report, timeout=0.5, accept=None):
+                r = bytes([0x02, 0x05, 0x00, 0x00, 0x05]).ljust(64, b"\0")   # a late read's answer
+                return r if accept is None or accept(r) else None
+        self.assertIsNone(app.battery(Ch()))
+
+
 class BootTest(unittest.TestCase):
     def test_crc16_modbus_check_value(self):
         self.assertEqual(boot.crc16(b"123456789"), 0x4B37)

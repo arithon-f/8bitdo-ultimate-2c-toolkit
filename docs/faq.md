@@ -36,6 +36,14 @@ If a write was interrupted, use Restore: it works in update mode. To leave updat
 
 macOS remembers how a Bluetooth device described itself. After installing or removing a Bluetooth tweak, remove the controller from Bluetooth settings and pair it again.
 
+### The dongle stays in X-input after B + Home
+
+Turning the controller on from off with B + Home isn't enough. With the controller on and its cable unplugged, hold B and Home until it turns off, then keep holding B and press Home to turn it on. The dongle then presents itself as a D-input gamepad (`2dc8:301c`). It needs the D-input tweak on the dongle. X and Home held turns the controller off, and it comes back in X-input.
+
+### macOS shows the controller's old name over Bluetooth
+
+macOS keeps the name it last saw for each Bluetooth device and uses it when the device connects, then reads the current one. So after you choose a new name and pair the controller again, macOS may show the old name, or 8BitDo's, in the battery widget and to games until the controller connects once more. Turn it off and on again and the new name appears. The name is in the controller either way.
+
 ### A game doesn't vibrate over Bluetooth
 
 Rumble over Bluetooth needs both the Xbox Series X|S tweak and the Rumble over Bluetooth tweak. Then open the Diagnostics tab and try the vibration both ways: the way a native game would, and by sending the report straight to the controller. If only the direct report vibrates, the firmware isn't the problem.
@@ -80,7 +88,7 @@ The tweaks were made for the Mac, but they live in the controller, so they go wi
 
 ### Does the app run on Linux?
 
-No, only macOS. The only part that depends on the operating system is `u2c_customfw/transport/`, and [porting.md](porting.md) explains how to port it.
+Yes. The Python CLI and WebUI run on Linux with the Linux HID/USB transport. See [linux.md](linux.md) for installation, permissions, diagnostics and tested device modes. The macOS native app remains macOS-only.
 
 ### Why are there three names?
 

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -16,12 +17,13 @@ from urllib.parse import parse_qs, urlparse
 from .. import __version__, disclaimer, settings, state, update
 from .. import cli
 from ..firmware import recipes
-from ..ops import backup as bkp, battlog, dongle, probe, report as report_mod, shown, update_available
+from ..ops import backup as bkp, battery as battery_ops, battlog, dongle, probe, report as report_mod, shown, update_available
 from ..ops import settings as settings_ops
 from ..ops.plan import OpError
 from ..protocol import ProtocolError, app
 from ..transport import PermissionDenied
 from . import jobs
+from .linux_gamepad import GAMEPAD
 
 STATIC = Path(__file__).parent / "static"
 SETTINGS_MISSING = "Controller settings isn't installed. Install it in the Firmware tab to change the sticks, triggers, buttons and vibration."
@@ -66,7 +68,7 @@ def make_server(store: Path, port: int = 0):
                 return self.send(403, "forbidden", "text/plain")
             path = self.path.split("?")[0]
             route = {"/api/state": self.api_state, "/api/events": self.api_events, "/api/firmware": self.api_firmware,
-                     "/api/settings": self.api_settings_read, "/api/busy": self.api_busy, "/api/update": self.api_update}.get(path)
+                     "/api/settings": self.api_settings_read, "/api/linux-gamepad": self.api_linux_gamepad, "/api/busy": self.api_busy, "/api/update": self.api_update, "/api/battery": self.api_battery}.get(path)
             if route:
                 return route()
             name = "index.html" if path == "/" else path.lstrip("/").removeprefix("static/")
@@ -74,6 +76,13 @@ def make_server(store: Path, port: int = 0):
             if f.parent == STATIC.resolve() and f.is_file():
                 return self.send(200, f.read_bytes(), TYPES.get(f.suffix, "application/octet-stream"))
             self.send(404, "not found", "text/plain")
+
+        def api_linux_gamepad(self):
+            if not self.auth():
+                return
+            if sys.platform != "linux":
+                return self.send(404, json.dumps({"error": "Linux only"}))
+            self.send(200, json.dumps(GAMEPAD.snapshot()))
 
         def api_state(self):
             if not self.auth():
@@ -114,6 +123,39 @@ def make_server(store: Path, port: int = 0):
             if sys.platform == "darwin" and not os.environ.get("U2C_SIM"):
                 subprocess.run(["/usr/bin/open", "-R", str(path)], check=False)
             return self.send(200, json.dumps({"records": len(rows), "summary": battlog.summary(rows), "name": path.name}))
+
+        def api_battery(self):
+            """The battery for the Diagnostics tab and the menu bar item: the controller's own reading by cable, or macOS's
+            over Bluetooth when exactly one Xbox-ID pad is connected. {} when there's nothing to read; {"busy": true} while a
+            task or another front end has the controller."""
+            if not self.auth():
+                return
+            found = cli.find()
+            cable = [f for f in found if f.mode in ("cable", "cable_360")]
+            if len(cable) == 1:
+                if not runner.claim():
+                    return self.send(200, json.dumps({"busy": True}))
+                answer = {}
+                try:
+                    ch = cli.open_channel(cable[0].info, 0x81)
+                    try:
+                        if app.open_session(ch) is not None:
+                            probe.check_not_dongle(ch)
+                            reading = app.battery(ch)
+                            answer = {"source": "cable", **reading} if reading else {"source": "cable", "unavailable": True}
+                    finally:
+                        ch.close()
+                except (OpError, PermissionDenied, OSError, ProtocolError):
+                    answer = {}
+                finally:
+                    runner.release()
+                return self.send(200, json.dumps(answer))
+            bluetooth = [f for f in found if f.mode == "bluetooth_xbox"]
+            if len(bluetooth) != 1:
+                return self.send(200, json.dumps({}))
+            name = bluetooth[0].info.name
+            percent = battery_ops.bluetooth_percent(name)
+            return self.send(200, json.dumps({"source": "bluetooth", "name": name, **({"percent": percent} if percent is not None else {})}))
 
         def api_busy(self):
             """For the Mac app's quit and close guard: the server knows, even when the page has lost track."""
@@ -291,6 +333,8 @@ def make_server(store: Path, port: int = 0):
                                        "restore_backup": pick and {"name": pick.path.name, "taken": bkp.taken(pick.path), "firmware": bkp.describe(pick.state)},
                                        "unit_backups": sorted(b.path.name for b in here),
                                        "titles": [recipes.RECIPES[k].title for k in keys],
+                                       "names": {k: {"label": r.name.label, "default": r.name.default, "max": r.name.max_len, "held": st.names.get(k)}
+                                                 for k, r in recipes.RECIPES.items() if r.name},
                                        "tweaks": [{"key": k, "title": recipes.RECIPES[k].title, "on": k in keys}
                                                   for k in shown(k for k, r in recipes.RECIPES.items() if not r.group)]
                                                  + [{"key": "ring", "title": ring[0] if ring else "Home ring: normal", "on": bool(ring)}]}))
@@ -315,7 +359,9 @@ def make_server(store: Path, port: int = 0):
                                                                    "firmware": dongle.describe(pick[1])},
                                        "stock_ok": fw.known or pick is not None,
                                        "known": fw.known, "version": fw.version,
-                                       "tweaks": [{"key": k, "title": title, "on": k in fw.tweaks} for k, (title, _) in dongle.TWEAKS.items()]}))
+                                       "tweaks": [{"key": k, "title": title, "on": k in fw.tweaks} for k, (title, _) in dongle.TWEAKS.items()],
+                                       "names": {k: {"label": n.label, "default": n.default, "max": n.max_len, "held": fw.names.get(k)}
+                                                 for k, n in dongle.NAMES.items()}}))
 
         def api_events(self):
             if not self.auth():
@@ -350,6 +396,13 @@ def make_server(store: Path, port: int = 0):
             except ValueError:
                 return self.send(400, json.dumps({"error": "bad request"}))
             route = self.path.split("?")[0]
+            if route == "/api/linux-gamepad/rumble":
+                if sys.platform != "linux":
+                    return self.send(404, json.dumps({"error": "Linux only"}))
+                if req.get("locality") not in ("default", "left", "right"):
+                    return self.send(400, json.dumps({"error": "Invalid locality"}))
+                result = GAMEPAD.rumble(req["locality"])
+                return self.send(200 if result["ok"] else 422, json.dumps(result))
             if route == "/api/accept":
                 state.accept(store)
                 return self.send(200, json.dumps({"accepted": True}))
@@ -366,7 +419,10 @@ def make_server(store: Path, port: int = 0):
             shown = req.get("device") if req.get("device") in ("controller", "dongle") else None   # the device the page asked about
             params = {"/api/backup": ("backup", {}),
                       "/api/patch": ("patch", dict(tweaks=",".join(req.get("tweaks", [])), download=req.get("base") == "download", device=shown,
-                                                    write=bool(req.get("write")))),
+                                                    write=bool(req.get("write")),
+                                                    **{arg: n[key] for n in [req.get("names") if isinstance(req.get("names"), dict) else {}]
+                                                       for key, arg in (("bt_xbox", "bt_name"), ("cable_360", "cable_name"), ("dongle_360", "xinput_name"), ("dongle_dinput", "dinput_name"))
+                                                       if isinstance(n.get(key), str)})),
                       "/api/restore": ("restore", dict(source=req.get("source", "backup"), write=bool(req.get("write")), device=shown,
                                                         expect=req.get("backup") if isinstance(req.get("backup"), str) else None,
                                                         force_unknown=bool(req.get("force_unknown"))))}.get(route)
@@ -384,10 +440,30 @@ def make_server(store: Path, port: int = 0):
 def serve(store: Path, port: int = 0) -> None:
     httpd, token = make_server(store, port)
     page = os.environ.get("U2C_PAGE_QUERY", "") if os.environ.get("U2C_SIM") else ""   # macos/preview.sh: the page simulator, never with real devices
-    print(f"U2C_URL http://127.0.0.1:{httpd.server_address[1]}/?token={token}{page}", flush=True)
+    url = f"http://127.0.0.1:{httpd.server_address[1]}/?token={token}{page}"
+    print(f"U2C_URL {url}", flush=True)
     if os.environ.get("U2C_EXIT_ON_EOF"):   # started by the Mac app, which holds our stdin open while it lives
         threading.Thread(target=exit_when_orphaned, args=(httpd.runner,), daemon=True).start()
-    httpd.serve_forever()
+    elif should_open_browser():
+        print("Opening the app in your browser. If it doesn't open, open the address above, with its token.", flush=True)
+        threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()   # a console browser waits until it ends
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping WebUI...", flush=True)
+    finally:
+        # Firmware jobs run in daemon threads. Never exit while a write is active.
+        with httpd.runner.cond:
+            if httpd.runner.running:
+                print("Waiting for the current operation to finish...", flush=True)
+            httpd.runner.cond.wait_for(lambda: not httpd.runner.running)
+        httpd.server_close()
+
+
+def should_open_browser() -> bool:
+    """Started by hand (on Linux, or with python -m on a Mac): open the page with its token, which is easy to leave out
+    when copying the address. Not under the Mac app, which shows it itself, nor in the simulation the tests drive."""
+    return not os.environ.get("U2C_EXIT_ON_EOF") and not os.environ.get("U2C_SIM") and not os.environ.get("U2C_NO_BROWSER")
 
 
 def exit_when_orphaned(runner, stdin=None, wait: float = 1.0, exit=os._exit) -> None:

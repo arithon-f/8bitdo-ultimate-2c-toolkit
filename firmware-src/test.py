@@ -12,7 +12,7 @@ HARNESS = r"""
 typedef unsigned char u8; typedef unsigned short u16; typedef unsigned int u32;
 u32 BTN, RAW_BTN; u16 LX, LY, RX, RY, LT, RT;
 u8 REGS[0x1000] __attribute__((aligned(4))); volatile u16 RING_LEVEL;
-u8 PCT, FULL, SAVED, ALERTS_FLAG; u32 TIMER, RING_CODE = 1;
+u8 PCT, FULL, SAVED, ALERTS_FLAG; u16 MV; u32 TIMER, RING_CODE = 1;
 u8 REST_FLAG, MOTOR_L, MOTOR_R, MOTOR_HOLD;
 static int notifies, afters, stock_passes;
 void rest_poll(void);
@@ -24,10 +24,14 @@ void ring_command(u32 level, u32 save);
 void main_poll(void);
 void vendor_a(u8 *p);
 void vendor_b(u8 *p);
+void battery_vendor_a(u8 *p);
+void battery_vendor_b(u8 *p);
 void ring_reset(void);
 unsigned ring_level_now(void);
 void save_settings(void) { printf("SAVE %02x\n", SAVED); }
 void flash_unlock(void) {}
+void stock_clear(u8 *p, u32 v, u32 n) { for (u32 k = 0; k < n; k++) p[k] = v; }
+void stock_send(u8 *d, u32 n, u32 i) { printf("SEND"); for (int k = 0; k < 6; k++) printf(" %02x", d[k]); printf(" %u %u\n", n, i); }
 void flash_erase(u32 a) { printf("ERASE %x\n", a); }
 void flash_write(u32 a, u32 n, u8 *d) { printf("WRITE %x\n", a); }
 void flash_read(u32 a, u32 n, u8 *d) { for (u32 i = 0; i < n; i++) d[i] = 0xff; }
@@ -84,6 +88,7 @@ int main(void) {
         if (line[0] == 'K') { sscanf(line + 2, "%x", &RAW_BTN); continue; } /* the physical word alone */
         if (line[0] == 'Y') { sscanf(line + 2, "%x", &BTN); continue; }     /* the mapped word alone */
         if (line[0] == 'N') { RING_CODE = 0; continue; } /* no ring code installed */
+        if (line[0] == 'M') { unsigned v; sscanf(line + 2, "%u", &v); MV = v; continue; } /* the battery's mV */
         if (line[0] == 'P') { /* P <n>: n main-loop passes, 100 ms apart */
             unsigned n; sscanf(line + 2, "%u", &n);
             while (n--) { TIMER += 1600000; main_poll(); }
@@ -104,7 +109,7 @@ int main(void) {
         if (line[0] == 'A' || line[0] == 'Z') { /* vendor command hooks, by report bytes */
             u8 pk[8] = {0}; int n = 0; unsigned x;
             for (char *q = line + 2; n < 8 && sscanf(q, "%2x", &x) == 1; q += 2) pk[n++] = x;
-            if (line[0] == 'A') vendor_a(pk); else vendor_b(pk);
+            if (line[0] == 'A') battery_vendor_a(pk); else battery_vendor_b(pk);   /* what the hooks call */
             continue;
         }
         if (line[0] == 'W' || line[0] == 'Q') { /* W <flag> <n>: n rest_poll calls on zeroed registers; Q <n>: n more. Then the timer word and status */
@@ -228,7 +233,7 @@ def rumble_packet(value):
     return bytes([2, 7 + len(value)]) + (3 + len(value)).to_bytes(2, "little") + b"\x04\x00\x52\x21\x00" + value
 
 
-SRC = [os.path.join(HERE, f) for f in ("packer.c", "settings.c", "rest.c")]
+SRC = [os.path.join(HERE, f) for f in ("packer.c", "settings.c", "rest.c", "battery.c")]
 
 
 def _run_harness(stdin, cflags=()):
@@ -411,12 +416,12 @@ def test_charging_blinks_slowly():
 
 
 def test_low_battery_blinks_fast():
-    ticks = Sim(pct=15).tick(30).ticks()[20:]
+    ticks = Sim(pct=6).tick(30).ticks()[20:]
     assert [lit(a) != lit(b) for a, b in zip(ticks, ticks[1:])] == [True] * 9
 
 
 def test_battery_above_the_limit_stays_steady():
-    assert all(lit(t) for t in Sim(pct=16).tick(30).ticks())
+    assert all(lit(t) for t in Sim(pct=7).tick(30).ticks())
 
 
 def test_a_charged_controller_is_steady():
@@ -450,23 +455,24 @@ def test_without_the_alerts_tweak_nothing_blinks_or_vibrates():
 
 
 def test_alert_state_has_hysteresis():
-    s = Sim(pct=50).tick(20).bat(15).tick(4).bat(17).tick(10)
+    s = Sim(pct=50).tick(20).bat(6).tick(4).bat(8).tick(10)
     t = s.ticks()[24:]
-    assert any(lit(a) != lit(b) for a, b in zip(t, t[1:])), "still low at 17 %"
-    t = Sim(pct=50).tick(20).bat(15).tick(4).bat(18).tick(10).ticks()[24:]
-    assert all(lit(x) for x in t), "clears at 18 %"
-    assert len(motors(Sim(pct=50).tick(20).bat(5).tick(10).bat(6).tick(10).ticks())) == 2, "very low stays at 6 %"
-    assert len(motors(Sim(pct=50).tick(20).bat(5).tick(10).bat(7).tick(10).bat(5).tick(10).ticks())) == 4, "clears at 7 %"
+    assert any(lit(a) != lit(b) for a, b in zip(t, t[1:])), "still low at 8 %"
+    t = Sim(pct=50).tick(20).bat(6).tick(4).bat(9).tick(10).ticks()[24:]
+    assert all(lit(x) for x in t), "clears at 9 %"
+    assert len(motors(Sim(pct=50).tick(20).bat(1).tick(10).bat(2).tick(10).ticks())) == 2, "very low stays at 2 %"
+    assert len(motors(Sim(pct=50).tick(20).bat(1).tick(10).bat(3).tick(10).bat(1).tick(10).ticks())) == 4, "clears at 3 %"
+    assert not motors(Sim(pct=50).tick(20).bat(2).tick(10).ticks()), "2 % is low, not very low"
 
 
-def test_pulses_on_reaching_5_percent_then_every_5_minutes():
-    m = motors(Sim(pct=50).tick(20).bat(5).tick(1510).ticks())
+def test_pulses_on_reaching_1_percent_then_every_5_minutes():
+    m = motors(Sim(pct=50).tick(20).bat(1).tick(1510).ticks())
     assert [h for _, h in m] == [SHORT] * 4, m
     assert m[2][0] - m[0][0] == 1500, m
 
 
 def test_two_short_pulses_are_as_tried_on_the_controller():
-    m = motors(Sim(pct=50).tick(20).bat(5).tick(10).ticks())
+    m = motors(Sim(pct=50).tick(20).bat(1).tick(10).ticks())
     assert m[1][0] - m[0][0] == 4, m  # 800 ms from start to start
 
 
@@ -532,6 +538,50 @@ def test_a_wobbling_charge_state_pulses_once_until_unplugged():
 
 def test_unplugging_gives_no_pulse():
     assert [h for _, h in motors(Sim().tick(20).bat(50, 1).tick(10).bat(50, 0).tick(10).ticks())] == [SHORT]
+
+
+BATTERY_HARNESS = r"""
+#include <stdio.h>
+unsigned battery_pct(unsigned mv);
+int main(void) { unsigned mv; while (scanf("%u", &mv) == 1) printf("%u\n", battery_pct(mv)); return 0; }
+"""
+DISCHARGE = os.environ.get("U2C_DISCHARGE_CSV", "")   # a battery log CSV of one full discharge, as Save Battery Log writes it
+
+
+def battery_pcts(mvs):
+    with tempfile.TemporaryDirectory() as d:
+        open(os.path.join(d, "b.c"), "w").write(BATTERY_HARNESS)
+        exe = os.path.join(d, "b")
+        subprocess.run(["cc", "-O1", "-o", exe, os.path.join(HERE, "battery.c"), os.path.join(d, "b.c")], check=True)
+        return [int(x) for x in subprocess.run([exe], input="".join(f"{v}\n" for v in mvs), capture_output=True, text=True, check=True).stdout.split()]
+
+
+def test_battery_pct_follows_the_table_and_stays_in_range():
+    p = battery_pcts(range(3000, 4400))
+    assert p[:289] == [0] * 289 and p[-1] == 100 and all(0 <= x <= 100 for x in p), "0 up to 3288 mV, 100 at the top"
+    assert all(a <= b for a, b in zip(p, p[1:])), "never goes down as the voltage rises"
+    assert battery_pcts([3352, 3608, 3800, 4120, 4129]) == [1, 47, 72, 100, 100], "a full charge reads 100"
+
+
+def test_battery_pct_matches_the_time_left_in_the_measured_discharge():
+    # the table's own source (2026-11-20, not in the repository): power-on 1's top from a full charge, then power-ons 5-21
+    if not os.path.exists(DISCHARGE):
+        return
+    rows = [list(map(float, l.split(","))) for l in open(DISCHARGE).read().split()[1:]]
+    first = [r for r in rows if r[0] == 1]
+    top = next(i for i, r in enumerate(first) if r[2] <= 4077)
+    mv = [int(r[2]) for r in first[:top] + [r for r in rows if r[0] >= 5]]
+    med = [sorted(mv[max(0, i - 7):i + 8])[len(mv[max(0, i - 7):i + 8]) // 2] for i in range(len(mv))]
+    left = [100 * (len(med) - i) / len(med) for i in range(len(med))]
+    err = [abs(p - l) for p, l in zip(battery_pcts(med), left)]
+    assert max(err) < 4 and sum(err) / len(err) < 1.5, (max(err), sum(err) / len(err))
+
+
+def test_the_battery_command_answers_with_the_level():
+    out = Sim(pct=77, ext=1).add("M 3870", "A 8105005b").out()
+    assert "SEND 5b 4d 1e 0f 00 01 63 2" in out, out   # 77 %, 3870 mV, not charged, external power; 63 bytes on interface 2
+    assert "SEND 5b 64 30 10 01 01 63 2" in Sim(pct=100, ext=1, full=1).add("M 4144", "Z 8105005b").out()
+    assert not [x for x in Sim().add("M 3870", "A 8105005c").out() if x.startswith("SEND")]
 
 
 def test_a_low_reading_right_after_starting_doesnt_alert():

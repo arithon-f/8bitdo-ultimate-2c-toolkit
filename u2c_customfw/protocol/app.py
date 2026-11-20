@@ -33,6 +33,18 @@ def read(ch, addr: int, n: int, tries: int = 3) -> bytes | None:
     return None
 
 
+def battery(ch) -> dict | None:
+    """The battery as the firmware sees it, by cable: 81 05 00 5b answers 5b, the percentage, mV (u16), the charged latch
+    and external power (PD0). None from firmware without the command (before 1.2)."""
+    def answers(r):   # it comes as input report 0x02 (the channel's), with the firmware's bytes after it
+        return r is not None and len(r) >= 7 and r[0] == 0x02 and r[1] == 0x5B
+    r = ch.xfer(bytes([0x81, 0x05, 0x00, 0x5B]).ljust(64, b"\0"), 0.5, accept=answers)
+    if not answers(r):
+        return None
+    full, external = bool(r[5]), bool(r[6] & 1)
+    return {"percent": r[2], "mv": r[3] | r[4] << 8, "full": full, "external": external, "charging": external and not full}
+
+
 def enter_update_mode(ch) -> None:
     """Restarts the controller into update mode: the firmware sets analog register 0x3c to 0x5a, which the bootloader checks
     at start-up, so it stays there until the bootloader's restart command (7) or until the power is cut. No reply."""

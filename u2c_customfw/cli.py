@@ -22,7 +22,8 @@ REPLUG = ("The controller hasn't come back yet: if macOS asks whether to allow t
           "controller, hold Home for about 12 seconds until it turns off, then connect it again.")
 INSTALLED = "Installed. {} If you changed a Bluetooth tweak, remove the controller in System Settings → Bluetooth and pair it again."
 RESTORED = "Restored. {} If its Bluetooth tweaks changed, remove the controller in System Settings → Bluetooth and pair it again."
-NOT_ENTERED = "The controller didn't restart into update mode, so nothing was written. "
+NOT_ENTERED = ("The controller didn't appear in update mode within 8 seconds, so nothing was written. If the small light below the Home ring "
+               "is blinking white, it is in update mode: allow the accessory if macOS asks, then try again. If it isn't blinking, ")
 IN_UPDATE_MODE = "The controller is in update mode and nothing was written. Try again: the app installs and restores from there too."
 BOOT_WAIT, BACK_WAIT, STEP = 8, 10, 0.3   # seconds: to reach update mode, to come back from it, between looks
 UNCHANGED = "The controller already has this firmware, so nothing was written."
@@ -114,7 +115,7 @@ def _check_shown(args, dongle: bool) -> None:
         raise Exit(2, f"The {'controller' if dongle else 'dongle'} the window showed isn't connected anymore, so nothing was written. Check again.")
 
 
-def _dongle_change(args, store, f, tweaks=(), source: str | None = None):
+def _dongle_change(args, store, f, tweaks=(), source: str | None = None, chosen=None):
     """Install (with these tweaks) or restore (source "backup" or "stock") the dongle's bank A."""
     if f.mode == "dongle_paired":
         raise Exit(2, DONGLE_ALONE)
@@ -147,8 +148,14 @@ def _dongle_change(args, store, f, tweaks=(), source: str | None = None):
         base = cur if dng.state(cur)[0] else next((d[dng.BASE:dng.END] for _, d in found if dng.state(d[dng.BASE:dng.END])[0]), None)
         if base is None:
             raise Exit(2, "Neither the dongle nor its backups hold firmware this app recognises, so nothing was written.")
-        new = dng.target(base, tweaks)
-        what = (f"This installs {dng.describe(tweaks)} on the dongle." if tweaks
+        chosen = dict(chosen or {})
+        held = dng.names(cur)   # reinstalling keeps a name chosen before, unless another (or "") is given
+        for k in dng.NAMES:
+            if k in tweaks and k not in chosen and held.get(k) not in (None, dng.NAMES[k].stock):
+                chosen[k] = held[k]
+        new = dng.target(base, tweaks, chosen)
+        called = " ".join(f"{dng.NAMES[k].label}: “{chosen.get(k) or dng.NAMES[k].default}”." for k in dng.NAMES if k in tweaks)
+        what = (f"This installs {dng.describe(tweaks)} on the dongle." + (f" {called}" if called else "") if tweaks
                 else "This installs 8BitDo's original firmware 1.03 on the dongle.")
     if cur == new:
         args.unchanged = True
@@ -251,7 +258,7 @@ def _into_update_mode(f):
         ch.close()
     info = dng._wait(find, "boot", BOOT_WAIT, STEP)
     if info is None:
-        raise Exit(2, NOT_ENTERED + BOOT_HELP)
+        raise Exit(2, NOT_ENTERED + BOOT_HELP[0].lower() + BOOT_HELP[1:])
     return info
 
 
@@ -322,15 +329,23 @@ def cmd_patch(args, store):
     if dongle:
         if any(k not in dng.TWEAKS for k in keys):
             raise Exit(2, f"The dongle's tweaks are {', '.join(dng.TWEAKS)}. Nothing was written.")
-        return _dongle_change(args, store, f, keys)
-    keys = with_hidden(keys)   # as the app: the 12.5 ms request in every install, the plain icon with the Xbox identity, the log with Processor rest
+        chosen = {k: v for k, v in (("dongle_360", getattr(args, "xinput_name", None)), ("dongle_dinput", getattr(args, "dinput_name", None))) if v is not None}
+        for k in chosen:
+            if k not in keys:
+                raise Exit(2, f"--{'xinput' if k == 'dongle_360' else 'dinput'}-name needs the {k} tweak. Nothing was written.")
+        return _dongle_change(args, store, f, keys, chosen=chosen)
+    keys = with_hidden(keys)   # as the app: the 12.5 ms request and the battery level in every install, the log with Processor rest
+    names = {k: v for k, v in (("bt_xbox", getattr(args, "bt_name", None)), ("cable_360", getattr(args, "cable_name", None))) if v is not None}
+    for k in names:
+        if k not in keys:
+            raise Exit(2, f"--{'bt' if k == 'bt_xbox' else 'cable'}-name needs the {k} tweak. Nothing was written.")
     stock = None
 
     def plan(ch, mode):
         nonlocal stock
         b = _backup_for(args, ch, store, mode=mode)
         stock = stock or stock_for(args, b, store)   # once: a check by cable comes first, and it may download
-        return patch.plan_patch(ch, b, stock, keys, mode)
+        return patch.plan_patch(ch, b, stock, keys, mode, names)
     _plan_and_write(args, f, plan, "Add --write to install.", INSTALLED)
 
 
@@ -365,6 +380,11 @@ def cmd_report(args, store):
     args.say(report.report(find(), st, tail) + ("(firmware state is from the newest backup)\n" if st else ""))
 
 
+def cmd_dongle_mode_test(args, store):
+    """Exercise only mode switching and identity checks; no flash writes."""
+    args.say(dng.mode_test(find, open_channel))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="u2c-customfw", description="Back up, patch and repair an 8BitDo Ultimate 2C (firmware 1.09).")
     common = argparse.ArgumentParser(add_help=False)
@@ -373,11 +393,17 @@ def main(argv=None) -> int:
     sub.add_parser("devices", parents=[common])
     sub.add_parser("backup", parents=[common])
     sub.add_parser("report", parents=[common])
+    sub.add_parser("dongle-mode-test", parents=[common], help="test dongle bootloader entry and return without flashing")
     p = sub.add_parser("identify", parents=[common]); p.add_argument("file")
     p = sub.add_parser("patch", parents=[common])
     p.add_argument("--tweaks", default="", help="comma list of: " + ", ".join(shown(k for k, r in recipes.RECIPES.items() if not r.earlier_form_of))
                    + "; for the dongle: " + ", ".join(dng.TWEAKS))
     p.add_argument("--backup"); p.add_argument("--download", action="store_true", help="use 8BitDo's v1.09 from its server")
+    keep = 'without it, the name installed now is kept; "" puts back'
+    p.add_argument("--bt-name", help=f"the Bluetooth name, with bt_xbox ({keep} “{recipes.RECIPES['bt_xbox'].name.default}”)")
+    p.add_argument("--cable-name", help=f"the name by cable, with cable_360 ({keep} 8BitDo's “{recipes.RECIPES['cable_360'].name.default}”)")
+    p.add_argument("--xinput-name", help=f"the dongle's name in X-input, with dongle_360 ({keep} 8BitDo's)")
+    p.add_argument("--dinput-name", help=f"the dongle's name in D-input, with dongle_dinput ({keep} 8BitDo's, the X-input name)")
     p = sub.add_parser("restore", parents=[common])
     p.add_argument("source", choices=["backup", "stock"])
     p.add_argument("--backup", help="this backup file instead of the newest recognised one of the controller")
@@ -391,12 +417,12 @@ def main(argv=None) -> int:
     get_logger(store).info("command %s", args.cmd)
     lock = None
     try:
-        if args.cmd in ("devices", "backup", "patch", "restore"):
+        if args.cmd in ("devices", "backup", "patch", "restore", "dongle-mode-test"):
             lock = state.lock_device(store)
             if lock is None:
                 raise Exit(2, "Another copy of the app, or the command line, is using the controller. Wait until it finishes, then try again.")
         {"devices": cmd_devices, "backup": cmd_backup, "identify": cmd_identify, "patch": cmd_patch,
-         "restore": cmd_restore, "report": cmd_report}[args.cmd](args, store)
+         "restore": cmd_restore, "report": cmd_report, "dongle-mode-test": cmd_dongle_mode_test}[args.cmd](args, store)
     except Exit as e:
         print(f"{e.msg} {e.hint}".strip(), file=sys.stderr)
         return e.code

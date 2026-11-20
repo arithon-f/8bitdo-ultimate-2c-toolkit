@@ -13,7 +13,7 @@ from unittest import mock
 
 from u2c_customfw import cli, state
 from u2c_customfw.firmware import image, recipes
-from u2c_customfw.ops import backup as bkp, devices, probe, report
+from u2c_customfw.ops import backup as bkp, battery as battery_ops, devices, probe, report
 from u2c_customfw import transport
 from u2c_customfw.protocol import app
 from u2c_customfw.sim import SimApp, SimBoot
@@ -46,6 +46,38 @@ class WebTest(unittest.TestCase):
         status, text = self.call("GET", "/api/events")
         self.assertEqual(status, 200)
         return [json.loads(l[6:]) for l in text.splitlines() if l.startswith("data: ")]
+
+    def test_the_battery_comes_from_the_controller_by_cable_and_from_macos_over_bluetooth(self):
+        cable = transport.DeviceInfo(0x045E, 0x028E, 0xFF7A, "USB", "x", None)
+        dev = SimApp(controller_flash())
+        with mock.patch.object(cli, "find", lambda: [devices.Found(cable, "cable_360")]), mock.patch.object(cli, "open_channel", lambda i, rid: dev):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]),
+                             {"source": "cable", "percent": 77, "mv": 3870, "full": False, "external": True, "charging": True})
+            held = state.lock_device(self.store)   # a task or the command line has the controller
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {"busy": True})
+            state.unlock_device(held)
+            dev.battery = None   # firmware without the command
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {"source": "cable", "unavailable": True})
+        paired = SimApp(b"\xff" * 0x20000)   # a dongle with the controller's ID: its 0x10000 reads blank
+        with mock.patch.object(cli, "find", lambda: [devices.Found(cable, "cable_360")]), mock.patch.object(cli, "open_channel", lambda i, rid: paired):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {})
+            self.assertFalse([s for s in paired.sent if s.startswith("8105005b")])
+        bt = transport.DeviceInfo(0x045E, 0x0B13, 0x0001, "Bluetooth Low Energy", "8BitDo Ultimate 2C (X/S)", None)
+        with mock.patch.object(cli, "find", lambda: [devices.Found(bt, "bluetooth_xbox")]), \
+                mock.patch.object(battery_ops, "bluetooth_percent", lambda name: 64 if name == "8BitDo Ultimate 2C (X/S)" else None):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {"source": "bluetooth", "percent": 64, "name": "8BitDo Ultimate 2C (X/S)"})
+        with mock.patch.object(cli, "find", lambda: [devices.Found(bt, "bluetooth_xbox")]), mock.patch.object(battery_ops, "bluetooth_percent", lambda name: None):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {"source": "bluetooth", "name": "8BitDo Ultimate 2C (X/S)"})   # macOS has no level
+        with mock.patch.object(cli, "find", lambda: [devices.Found(bt, "bluetooth_xbox"), devices.Found(bt, "bluetooth_xbox")]):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {})   # two Xbox-ID pads: which one is unknown
+        self.assertEqual(self.call("GET", "/api/battery", token=None)[0], 403)
+
+    def test_a_short_read_in_this_core_is_waited_for(self):
+        runner = jobs.Runner(self.store)
+        self.assertTrue(runner.claim())
+        threading.Timer(0.3, runner.release).start()   # the battery poll, finishing
+        self.assertTrue(runner.claim())   # the page's firmware read gets the controller instead of "another task"
+        runner.release()
 
     def test_the_battery_log_is_read_by_cable_and_saved_as_csv(self):
         import struct
@@ -189,17 +221,26 @@ class WebTest(unittest.TestCase):
 
         def fake(args, store):
             seen.update(tweaks=args.tweaks, write=args.write, download=args.download, source=args.source,
-                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None), device=args.device)
+                        force_unknown=args.force_unknown, expect=args.expect, file=getattr(args, "file", None), names=(args.bt_name, args.cable_name, args.xinput_name, args.dinput_name), device=args.device)
         state.accept(self.store)
         jobs.ACTIONS["patch"] = fake
         jobs.ACTIONS["restore"] = fake
         self.assertEqual(self.call("POST", "/api/patch", {"tweaks": ["bt_xbox", "cable_360"], "base": "download", "write": True})[0], 202)
         self.events()
-        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None, device=None))
+        self.assertEqual(seen, dict(tweaks="bt_xbox,cable_360", write=True, download=True, source="backup", force_unknown=False, expect=None, file=None, names=(None, None, None, None), device=None))
         for sent, got in (("dongle", "dongle"), ("controller", "controller"), ("printer", None)):
             self.call("POST", "/api/patch", {"tweaks": [], "device": sent})
             self.events()
             self.assertEqual(seen["device"], got)
+        self.call("POST", "/api/patch", {"tweaks": ["bt_xbox", "cable_360"], "names": {"bt_xbox": "My Pad", "cable_360": "Wired", "dim_leds": "x"}})
+        self.events()
+        self.assertEqual(seen["names"], ("My Pad", "Wired", None, None))   # only the two names there are
+        self.call("POST", "/api/patch", {"tweaks": ["bt_xbox"], "names": {"bt_xbox": ["not", "text"]}})
+        self.events()
+        self.assertEqual(seen["names"], (None, None, None, None))
+        self.call("POST", "/api/patch", {"tweaks": ["dongle_360", "dongle_dinput"], "names": {"dongle_360": "X", "dongle_dinput": "D", "bt_xbox": "B"}})
+        self.events()
+        self.assertEqual(seen["names"], ("B", None, "X", "D"))   # passed on; the dongle's install uses only its own
         self.assertEqual(self.call("POST", "/api/restore", {"source": "stock", "write": False})[0], 202)
         self.events()
         self.assertEqual((seen["source"], seen["write"], seen["force_unknown"]), ("stock", False, False))
@@ -434,6 +475,8 @@ class WebTest(unittest.TestCase):
         self.assertTrue(data["known"])
         self.assertEqual(data["recipes"], ["bt_xbox", "cable_360"])
         self.assertIn("Xbox Series X|S controller over Bluetooth", " ".join(data["titles"]))
+        self.assertEqual(data["names"], {"bt_xbox": {"label": "Bluetooth name", "default": "8BitDo Ultimate 2C (X/S)", "max": 27, "held": "8BitDo Ultimate 2C (X/S)"},
+                                         "cable_360": {"label": "Name over cable", "default": "8BitDo Ultimate 2C Wireless Controller", "max": 38, "held": "8BitDo Ultimate 2C Wireless Controller"}})
         self.assertEqual((data["version"], data["version_from"]), (1.09, "update record"))
         self.assertEqual((data["pending"], data["boot_identity"]), (False, None))
         self.assertEqual([(t["key"], t["on"]) for t in data["tweaks"]],
@@ -459,6 +502,7 @@ class WebTest(unittest.TestCase):
                 mock.patch.object(recipes, "_constants", lambda a=None, b=None, c=None: (K["stock_sha256"], K["region_sha256"], K["remainder_sha256"])):
             data = json.loads(self.call("GET", "/api/firmware")[1])
         self.assertIsNone(data["restore_backup"])
+        self.assertFalse(data["update"])   # the original firmware: nothing to update
 
     def test_firmware_endpoint_by_cable_names_the_backup_restore_uses(self):
         flash = controller_flash()
@@ -481,7 +525,10 @@ class WebTest(unittest.TestCase):
         self.assertEqual(data, {"device": "dongle", "paired": False, "boot": False, "backed": False, "restore_backup": None, "stock_ok": True,
                                 "known": True, "version": 1.03,
                                 "tweaks": [{"key": "dongle_360", "title": "Xbox 360 controller over 2.4 GHz", "on": True},
-                                           {"key": "dongle_dinput", "title": "D-input mode with B + Home", "on": False}]})
+                                           {"key": "dongle_dinput", "title": "D-input mode with B + Home", "on": False}],
+                                "names": {"dongle_360": {"label": "X-input name", "default": "8BitDo Ultimate 2C Wireless Controller", "max": 38,
+                                                         "held": "8BitDo Ultimate 2C Wireless Controller"},   # installed before names
+                                          "dongle_dinput": {"label": "D-input name", "default": "8BitDo Ultimate 2C Wireless Controller", "max": 36, "held": None}}})
 
     def test_a_dongle_left_in_update_mode_is_named_and_its_backup_offered(self):
         from tests.test_dongle import STOCK, K as DK, flash, World
@@ -623,6 +670,15 @@ class WebTest(unittest.TestCase):
         self.assertEqual(e.exception.code, 403)
 
 
+class BrowserTest(unittest.TestCase):
+    def test_started_by_hand_the_page_opens_in_the_browser_but_not_under_the_mac_app_or_the_simulation(self):
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertTrue(server.should_open_browser())
+        for env in ({"U2C_EXIT_ON_EOF": "1"}, {"U2C_SIM": "1"}, {"U2C_NO_BROWSER": "1"}):
+            with mock.patch.dict("os.environ", env, clear=True):
+                self.assertFalse(server.should_open_browser(), env)
+
+
 class SimulationStoreTest(unittest.TestCase):
     def test_the_simulation_leaves_the_real_store_alone(self):
         import os
@@ -654,3 +710,31 @@ class OrphanTest(unittest.TestCase):
         exited = []
         server.exit_when_orphaned(Busy(), stdin=io.StringIO("anything\n"), wait=0, exit=exited.append)
         self.assertEqual((len(checks), exited), (3, [0]))
+
+
+class ShutdownTest(unittest.TestCase):
+    def setUp(self):   # serve() opens the browser when started by hand: not from the tests
+        p = mock.patch.dict("os.environ", {"U2C_NO_BROWSER": "1"}); p.start(); self.addCleanup(p.stop)
+
+    def test_ctrl_c_closes_server_without_traceback(self):
+        httpd = mock.MagicMock()
+        httpd.server_address = ("127.0.0.1", 41941)
+        httpd.serve_forever.side_effect = KeyboardInterrupt
+        httpd.runner.running = False
+        with mock.patch.object(server, "make_server", return_value=(httpd, "token")):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                server.serve(Path("/unused"))
+        self.assertIn("Stopping WebUI...", output.getvalue())
+        httpd.server_close.assert_called_once_with()
+
+    def test_ctrl_c_waits_for_active_firmware_job(self):
+        httpd = mock.MagicMock()
+        httpd.server_address = ("127.0.0.1", 41941)
+        httpd.serve_forever.side_effect = KeyboardInterrupt
+        httpd.runner.running = True
+        with mock.patch.object(server, "make_server", return_value=(httpd, "token")):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                server.serve(Path("/unused"))
+        self.assertIn("Waiting for the current operation to finish...", output.getvalue())
+        httpd.runner.cond.wait_for.assert_called_once()
+        httpd.server_close.assert_called_once_with()

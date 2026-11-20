@@ -89,6 +89,37 @@ class ControllerNameTest(unittest.TestCase):
         self.assertEqual(self.built[self.GATT:self.GATT + len(self.NEW)], self.NEW)
         self.assertEqual(self.built[self.SCAN:self.SCAN + len(self.NEW)], self.NEW)
 
+    def test_a_chosen_bluetooth_name_goes_everywhere_the_name_and_its_length_live(self):
+        img = recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "My Pad"}, **self.k)
+        at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
+        self.assertEqual(at(0x172DC, 27), b"My Pad".ljust(27, b"\0"))                    # GATT device name
+        self.assertEqual(at(0x17488, 4), (6).to_bytes(4, "little"))                      # ... its length
+        self.assertEqual(at(0x17254, 29), bytes([7, 9]) + b"My Pad".ljust(27, b"\0"))    # scan response
+        self.assertEqual(at(0xA214, 2), bytes([8, 0xA1]))                                # ... its length: movs r1, #8
+        st = recipes.identify(img, **self.k)
+        self.assertEqual((st.recipes, st.names), (("bt_xbox",), {"bt_xbox": "My Pad"}))
+        self.assertEqual(recipes.identify(self.built, **self.k).names, {"bt_xbox": "8BitDo Ultimate 2C (X/S)"})
+        self.assertEqual(recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "8BitDo Ultimate 2C (X/S)"}, **self.k), self.built)
+
+    def test_names_are_only_printable_text_of_the_slots_length(self):
+        self.assertEqual(recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": ""}, **self.k), self.built)   # "": the default
+        for bad in ("x" * 28, " lead", "trail ", "tab\there", "caf\u00e9", 7):
+            with self.assertRaises(RecipeError, msg=repr(bad)):
+                recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": bad}, **self.k)
+        recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "x" * 27}, **self.k)
+        with self.assertRaises(RecipeError):   # a name only for a tweak being installed, and one that has a name
+            recipes.build(self.stock, ["bt_xbox"], names={"cable_360": "x"}, **self.k)
+        with self.assertRaises(RecipeError):
+            recipes.build(self.stock, ["bt_xbox", "dim_leds"], names={"dim_leds": "x"}, **self.k)
+
+    def test_a_name_whose_copies_disagree_makes_the_image_unknown(self):
+        img = bytearray(recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "My Pad"}, **self.k))
+        img[0xA214 - image.BASE] = 9   # the scan response's length no longer the name's
+        self.assertFalse(recipes.identify(bytes(img), **self.k).known)
+        img = bytearray(recipes.build(self.stock, ["bt_xbox"], names={"bt_xbox": "My Pad"}, **self.k))
+        img[0x172DC - image.BASE + 20] = 0x41   # something after the name's end
+        self.assertFalse(recipes.identify(bytes(img), **self.k).known)
+
     def test_a_controller_with_the_old_name_is_still_recognised(self):
         st = recipes.identify(self.with_old_name(self.built, self.GATT, self.SCAN), **self.k)
         self.assertEqual((st.known, st.recipes), (True, ("bt_xbox",)))
@@ -141,11 +172,12 @@ class ControllerNameTest(unittest.TestCase):
         "hunplug.bin": "6beee17a70d71fa42438a212ba1b33b3829acdde507e30348e323cee8f703fe6",
         "pollhook.bin": "39f5251bcf8179cd85115b631cbeecd771dbe39fb856e6bc245156828b84694e",
         "ringhook.bin": "e5c2e40947f7369c2b0e4afe98c39395a0a1b9f9248de7ef69283e12b0d02330",
-        "ringtail.bin": "0e7f0b38fd8de0b272a270066ca681e9c660cecf29265279e8b107b4bacc0ae8",
+        "ringtail10.bin": "0e7f0b38fd8de0b272a270066ca681e9c660cecf29265279e8b107b4bacc0ae8",   # 1.0-1.1: alerts at 15 % and 5 %
+        "ringtail12b.bin": "196452d74f20e6c6541e2249b026d1650d2b6ce68540d8c868cc0d85d5c38849",   # 1.2 beta: no battery command
+        "vhooka10.bin": "9d23fcfe77ae92d7215d02012a693d4a93778e695c6ab3f56954694ee94ff858",   # 1.0-1.2 beta: straight to vendor_a
+        "vhookb10.bin": "e0c27de8ca721f16eb4541dc9e9a70cda2f7ed2ec67c5fa552317b1f9ae35bff",   # 1.0-1.2 beta: straight to vendor_b
         "rumble.bin": "7acd917ab3f4dd6a54ab272a19f13e877a010dc17f9d8c899e28ea52125af5cf",
         "sram.bin": "c3f0966446812c97bb976ba0f28b9a4b8a158939d6f158107faa747c3b546699",
-        "vhooka.bin": "9d23fcfe77ae92d7215d02012a693d4a93778e695c6ab3f56954694ee94ff858",
-        "vhookb.bin": "e0c27de8ca721f16eb4541dc9e9a70cda2f7ed2ec67c5fa552317b1f9ae35bff",
         }
         for name, sha in published.items():
             self.assertEqual(hashlib.sha256((recipes.BLOBS / name).read_bytes()).hexdigest(), sha, name)
@@ -200,7 +232,7 @@ class UpdateNoticeTest(unittest.TestCase):
         checked = 0
         for k in keys:
             for e in recipes.RECIPES[k].edits:
-                if e.superseded_by in keys:
+                if e.text or (e.superseded_by in keys):   # names are the person's choice, not a tweak's code
                     continue
                 for old in e.accepts:
                     img = bytearray(fresh); img[e.addr - image.BASE:e.addr - image.BASE + e.size] = old
@@ -208,13 +240,16 @@ class UpdateNoticeTest(unittest.TestCase):
                     self.assertEqual((st.known, st.recipes), (True, tuple(sorted(keys))), (k, hex(e.addr)))
                     self.assertTrue(st.older and update_available(st), (k, hex(e.addr)))
                     checked += 1
-        self.assertGreaterEqual(checked, 3)   # rumble 0.2 and 0.3, 1.1's battery log
+        self.assertGreaterEqual(checked, 4)   # rumble 0.2 and 0.3, the 1.0-1.1 ring code, 1.1's battery log
 
-    def test_a_missing_hidden_tweak_says_an_update_exists(self):
-        old = recipes.build(self.stock, [k for k in with_hidden(self.ALL) if k != "bt_plain_icon"], **self.k)   # what 1.1.0 installed
+    def test_a_hidden_tweak_that_every_install_has_now_says_an_update_exists(self):
+        old = recipes.build(self.stock, [k for k in with_hidden(self.ALL) if k != "battery_table"], **self.k)   # what 1.1 installed
         st = recipes.identify(old, **self.k)
         self.assertTrue(st.known and not st.older and update_available(st))
+        self.assertTrue(update_available(recipes.identify(recipes.build(self.stock, ["cpu_rest", "ring_5", "ble_interval", "battery_table"], **self.k), **self.k)), "1.0's Processor rest, without the log")
         self.assertFalse(update_available(recipes.identify(recipes.whole(self.stock), **self.k)), "the original firmware has nothing to update")
+        no_icon = recipes.build(self.stock, [k for k in with_hidden(self.ALL) if k != "bt_plain_icon"], **self.k)   # the Xbox identity before 1.2
+        self.assertTrue(update_available(recipes.identify(no_icon, **self.k)))
         with self.assertRaises(RecipeError):
             recipes.build(self.stock, ["bt_plain_icon"], **self.k)   # only with the Xbox identity over Bluetooth
 
@@ -416,6 +451,35 @@ class FromEarlierVersionsTest(unittest.TestCase):
         html = (Path(recipes.__file__).parents[1] / "web" / "static" / "index.html").read_text()
         self.assertIn('value="bt_rumble_long">', html)
 
+    def test_a_cable_name_is_chosen_with_the_xbox_360_tweak(self):
+        plain = recipes.build(self.stock, ["cable_360"], names={"cable_360": "Q"}, **self.k)
+        default = recipes.build(self.stock, ["cable_360"], **self.k)   # no name chosen: 8BitDo's, bytes as they were
+        stock_name = recipes.STOCK_CABLE_NAME   # 8BitDo's bytes there (checked against the real 1.09 in RealStockTest)
+        self.assertEqual(default[0x1792C - image.BASE:0x1792C - image.BASE + 0x4E], bytes([0x4E, 3]) + stock_name.encode("utf-16-le"))
+        self.assertEqual(default[0xE91C - image.BASE], 0x4E)
+        self.assertEqual(recipes.identify(default, **self.k).names, {"cable_360": recipes.STOCK_CABLE_NAME})
+        name = recipes.CABLE_NAME   # the suggestion, chosen
+        img = recipes.build(self.stock, ["cable_360"], names={"cable_360": name}, **self.k)
+        at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
+        n = 2 + 2 * len(name)
+        self.assertEqual(at(0x1792C, 2), bytes([n, 3]))                       # a string descriptor of 54 bytes
+        self.assertEqual(at(0x1792C + 2, n - 2).decode("utf-16-le"), name)
+        self.assertEqual(at(0x1792C + n, 0x4E - n), bytes(0x4E - n))           # the rest of 8BitDo's 78-byte name, cleared
+        self.assertEqual(at(0xE91C, 1), bytes([n]))                           # movs r3, #n: the length it's sent with
+        self.assertEqual([i + image.BASE for i in range(len(img)) if img[i] != plain[i]][:1], [0xE91C])   # nothing else differs
+        st = recipes.identify(img, **self.k)
+        self.assertEqual((st.recipes, st.names), (("cable_360",), {"cable_360": name}))
+        img = recipes.build(self.stock, ["cable_360"], names={"cable_360": "Z" * 38}, **self.k)
+        self.assertEqual(img[0x1792C - image.BASE:0x1792C - image.BASE + 78], bytes([78, 3]) + "Z".encode("utf-16-le") * 38)
+        self.assertEqual(recipes.identify(img, **self.k).names, {"cable_360": "Z" * 38})
+        with self.assertRaises(RecipeError):
+            recipes.build(self.stock, ["cable_360"], names={"cable_360": "Z" * 39}, **self.k)
+
+    def test_the_app_offers_a_name_by_cable_under_the_xbox_360_switch(self):
+        html = (Path(recipes.__file__).parents[1] / "web" / "static" / "index.html").read_text()
+        self.assertIn('data-for="cable_360"', html)
+        self.assertNotIn('value="cable_name"', html)
+
     def test_fast_scan_halves_the_scan_period_and_keeps_home_and_turbo_timings(self):
         img = recipes.build(self.stock, ["fast_scan"], **self.k)
         at = lambda a, n: img[a - image.BASE:a - image.BASE + n]
@@ -516,6 +580,11 @@ class RealStockTest(unittest.TestCase):
         st = recipes.identify(self.stock)
         self.assertEqual((st.known, st.recipes), (True, ()))
 
+    def test_with_no_name_chosen_the_cable_name_stays_8bitdos(self):
+        img = recipes.build(self.stock, ["cable_360"])
+        for a, n in ((0x1792C, 0x4E), (0xE91C, 1)):
+            self.assertEqual(img[a - image.BASE:a - image.BASE + n], self.stock[a - image.BASE:a - image.BASE + n])
+
     def test_matches_the_payload_verified_on_hardware(self):
         if "U2C_REF_PAYLOAD" not in os.environ:  # a payload flashed and verified on a real controller (not in the repo)
             self.skipTest("set U2C_REF_PAYLOAD to compare with a payload verified on hardware")
@@ -525,6 +594,19 @@ class RealStockTest(unittest.TestCase):
     def test_all_combinations_identify(self):
         for keys in VALID + [[r] for r in RING] + [KEYS + [r] for r in RING]:
             self.assertEqual(recipes.identify(recipes.build(self.stock, keys)).recipes, tuple(sorted(keys)))
+
+    def test_names_equal_to_8bitdos_own_still_identify(self):
+        # 8BitDo's Bluetooth name, chosen with the Xbox tweak, writes 8BitDo's bytes in some of its places: still the tweak
+        img = recipes.build(self.stock, ["bt_xbox", "cable_360"], names={"bt_xbox": "8BitDo Ultimate 2C Wireless"})
+        st = recipes.identify(img)
+        self.assertEqual((st.known, st.recipes, st.names["bt_xbox"]), (True, ("bt_xbox", "cable_360"), "8BitDo Ultimate 2C Wireless"))
+        # the Xbox 360 tweak as earlier versions installed it, with 8BitDo's cable name, is still that tweak
+        img = recipes.build(self.stock, ["cable_360"], names={"cable_360": recipes.STOCK_CABLE_NAME})
+        self.assertEqual(img[0x1792C - image.BASE:0x1792C - image.BASE + 0x4E], self.stock[0x1792C - image.BASE:0x1792C - image.BASE + 0x4E])
+        self.assertEqual(img[0xE91C - image.BASE], self.stock[0xE91C - image.BASE])
+        self.assertEqual((recipes.identify(img).recipes, recipes.identify(img).names), (("cable_360",), {"cable_360": recipes.STOCK_CABLE_NAME}))
+        self.assertEqual(recipes.identify(recipes.build(self.stock, ["cable_360"])).names, {"cable_360": recipes.STOCK_CABLE_NAME})   # none chosen
+        self.assertEqual(recipes.identify(self.stock).names, {})
 
 
 if __name__ == "__main__":

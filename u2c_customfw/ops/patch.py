@@ -44,7 +44,9 @@ def current_bank_a(ch, mode: str = "boot") -> bytes:
         raise OpError(f"{e}. Nothing was written.") from e
 
 
-def plan_patch(ch, backup, stock: bytes, keys, mode: str = "boot") -> Plan:
+def plan_patch(ch, backup, stock: bytes, keys, mode: str = "boot", names=None) -> Plan:
+    """names: recipe -> a chosen name, for recipes with a name slot (recipes.NameSlot); "" puts the default back. A recipe
+    left out keeps the name the controller holds now, so reinstalling never renames it; else it gets its default."""
     check_unit(ch, backup, mode)
     check_no_pending_update(ch, mode=mode)
     cur = current_bank_a(ch, mode)
@@ -55,8 +57,14 @@ def plan_patch(ch, backup, stock: bytes, keys, mode: str = "boot") -> Plan:
             raise OpError("This controller's firmware isn't the original 1.09, with or without this app's tweaks, and its version can't be identified, so nothing was written. It may be another firmware version, which you can update with 8BitDo's own updater, or firmware modified outside this app, which restoring your backup replaces.")
         if abs(v - image.SUPPORTED_VERSION) > 1e-6:
             raise OpError(f"This controller has firmware {v:.2f}, and this app only supports {image.SUPPORTED_VERSION:.2f}, so nothing was written. Update it with 8BitDo's own updater first.")
+    names = dict(names or {})
+    held = {} if replacing else recipes.identify(cur).names
+    for k in keys:
+        slot = recipes.RECIPES[k].name if k in recipes.RECIPES else None
+        if slot and k not in names and held.get(k) and held[k] != slot.default:
+            names[k] = held[k]
     try:
-        new = recipes.build(stock, keys)
+        new = recipes.build(stock, keys, names=names)
     except recipes.RecipeError as e:
         raise OpError(str(e)) from e
     target = bytearray(image.FLASH_SIZE)
@@ -64,4 +72,6 @@ def plan_patch(ch, backup, stock: bytes, keys, mode: str = "boot") -> Plan:
     diff = sum(x != y for x, y in zip(cur, new))
     note = "This replaces firmware 1.09 that this app doesn't recognise. " if replacing else ""
     tweaks = listed(recipes.RECIPES[k].title for k in shown(keys)) if shown(keys) else "no tweaks"
-    return Plan(bytes(target), diff > 0, [], diff, f"{note}Installing changes {count(diff, 'byte')} of the firmware, with {tweaks}.")
+    called = " ".join(f"{recipes.RECIPES[k].name.label}: “{names.get(k) or recipes.RECIPES[k].name.default}”."
+                      for k in shown(keys) if recipes.RECIPES[k].name)
+    return Plan(bytes(target), diff > 0, [], diff, f"{note}Installing changes {count(diff, 'byte')} of the firmware, with {tweaks}." + (f" {called}" if called else ""))
