@@ -114,14 +114,18 @@ class LibusbChannel:
                 sent = self.device.write(OUT_EP, data, timeout=max(100, int(timeout * 1000)))
             else:
                 raise ValueError("U2C_USB_OUTPUT must be 'control' or 'interrupt'")
-        except self.core.USBError as exc:
+        except self.core.USBError as exc:   # gone or a USB error: no answer, as IOKit gives, so the protocol retries
             LOG.debug("libusb OUT error: %s", exc)
-            raise
+            return None
         LOG.debug("libusb OUT sent=%d", sent)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             remaining = max(1, int((deadline - time.monotonic()) * 1000))
-            response = self._receive(remaining)
+            try:
+                response = self._receive(remaining)
+            except self.core.USBError as exc:
+                LOG.debug("libusb IN error: %s", exc)
+                return None
             if response is None:
                 return None
             if response and (accept is None or accept(response)):
@@ -131,9 +135,12 @@ class LibusbChannel:
         return None
 
     def close(self):
-        if self.claimed:
-            self.util.release_interface(self.device, INTERFACE)
+        if self.claimed:   # a device that has gone can't release its interface; the handle is freed all the same
             self.claimed = False
+            try:
+                self.util.release_interface(self.device, INTERFACE)
+            except Exception as exc:
+                LOG.debug("libusb release error: %s", exc)
             self.util.dispose_resources(self.device)
 
 

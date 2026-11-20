@@ -149,8 +149,10 @@ class HidrawChannel:
             written = os.write(self.fd, data)
         except PermissionError as e:
             raise PermissionDenied(f"Permission denied opening {self.dev.handle}; install the udev rules and reconnect the device.") from e
+        except OSError:   # gone or a USB error: no answer, as IOKit gives, so the protocol retries and a write says it was interrupted
+            return None
         if written != len(data):
-            raise OSError(f"short HID write: {written}/{len(data)} bytes")
+            return None
 
         deadline = time.monotonic() + max(0.0, timeout)
         while True:
@@ -167,7 +169,7 @@ class HidrawChannel:
             except OSError as e:
                 if e.errno in (11, 4):
                     continue
-                raise
+                return None   # the device went away (EIO, ENODEV) or the transfer failed: no answer
             if not reply:
                 continue
             if accept is None or accept(reply):

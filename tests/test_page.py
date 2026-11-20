@@ -153,6 +153,9 @@ class TabsTest(PageCase):
             self.assertIn("disabled", none.find(id_).attrs, id_)
         self.assertEqual(none.find("restore-why").all_text(), "Back up the dongle first to restore it.")
         self.assertEqual(self.hero("&diagsim=dongle&stockdongle=1")[1], "Original dongle firmware 1.03")
+        both = self.server.dom("&diagsim=dongle&dinput=1").find("details-body").all_text()
+        self.assertIn("1.03 with 2 tweaks", both)
+        self.assertIn("D-input mode with B + Home", both)
         self.assertEqual(next(n for n in dom.find("pic").walk() if n.tag == "svg").attrs.get("aria-label"), "2.4 GHz dongle")
         text = dom.find("tab-firmware").shown_text()
         self.assertNotIn("controller", text.replace("Xbox 360 controller", ""))   # no step talks about the controller

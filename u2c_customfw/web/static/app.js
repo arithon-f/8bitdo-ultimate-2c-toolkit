@@ -215,6 +215,7 @@ const WHO = { 0x301b: "The controller", 0x301c: "The 2.4 GHz dongle" };  // the 
 const tweakOrder = (key) => key.startsWith("ring") ? Infinity : tweakBoxes().findIndex((x) => x.value === key);  // as the toggles, the Home ring last
 const firmwareName = () => !fw.known ? "Unknown" : fw.device === "dongle" ? (fw.tweaks.some((t) => t.on) ? `Dongle ${fw.version.toFixed(2)} with ${fw.tweaks.filter((t) => t.on).map((t) => t.title).join(", ")}` : `Original dongle ${fw.version.toFixed(2)}`)
   : fw.recipes.length ? `1.09 with ${fw.recipes.length} ${fw.recipes.length === 1 ? "tweak" : "tweaks"}${fw.titles && fw.titles.length ? `: ${fw.titles.join(", ")}` : ""}` : "Original 1.09";
+const dongleOn = () => fw.tweaks.filter((t) => t.on);
 function details() {
   const box = $("details-body"), inUpdateMode = !!st && st.devices.some((d) => d.mode === "boot");
   const say = (text) => { box.innerHTML = ""; const p = document.createElement("p"); p.style.marginBottom = 0; p.textContent = text; box.append(p); };
@@ -225,7 +226,7 @@ function details() {
   const id = fw.boot_identity;
   const v = fw.version ? fw.version.toFixed(2) : "";
   const rows = fw.device === "dongle" ? [["Device", fw.paired ? "The 2.4 GHz dongle, with the controller connected through it" : "The 2.4 GHz dongle"],
-    ["Firmware", !fw.known ? (v ? `Unrecognised ${v}` : "Unknown") : fw.tweaks[0].on ? [`${v} with 1 tweak`, fw.tweaks[0].title] : `Original ${v}`],
+    ["Firmware", !fw.known ? (v ? `Unrecognised ${v}` : "Unknown") : dongleOn().length ? [`${v} with ${dongleOn().length} ${dongleOn().length === 1 ? "tweak" : "tweaks"}`, ...dongleOn().map((t) => t.title)] : `Original ${v}`],
     ["Identified from", fw.known ? "The installed firmware" : v ? "The dongle's update record" : "Nothing it holds"]] : null;
   if (rows) return detailRows(box, rows);
   const titles = (fw.titles || []).map((t, i) => [tweakOrder(fw.recipes[i] || ""), t]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);

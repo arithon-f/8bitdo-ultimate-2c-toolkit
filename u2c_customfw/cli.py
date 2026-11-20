@@ -22,7 +22,8 @@ REPLUG = ("The controller hasn't come back yet: if macOS asks whether to allow t
           "controller, hold Home for about 12 seconds until it turns off, then connect it again.")
 INSTALLED = "Installed. {} If you changed a Bluetooth tweak, remove the controller in System Settings → Bluetooth and pair it again."
 RESTORED = "Restored. {} If its Bluetooth tweaks changed, remove the controller in System Settings → Bluetooth and pair it again."
-NOT_ENTERED = "The controller didn't restart into update mode, so nothing was written. "
+NOT_ENTERED = ("The controller didn't appear in update mode within 8 seconds, so nothing was written. If the small light below the Home ring "
+               "is blinking white, it is in update mode: allow the accessory if macOS asks, then try again. If it isn't blinking, ")
 IN_UPDATE_MODE = "The controller is in update mode and nothing was written. Try again: the app installs and restores from there too."
 BOOT_WAIT, BACK_WAIT, STEP = 8, 10, 0.3   # seconds: to reach update mode, to come back from it, between looks
 UNCHANGED = "The controller already has this firmware, so nothing was written."
@@ -257,7 +258,7 @@ def _into_update_mode(f):
         ch.close()
     info = dng._wait(find, "boot", BOOT_WAIT, STEP)
     if info is None:
-        raise Exit(2, NOT_ENTERED + BOOT_HELP)
+        raise Exit(2, NOT_ENTERED + BOOT_HELP[0].lower() + BOOT_HELP[1:])
     return info
 
 

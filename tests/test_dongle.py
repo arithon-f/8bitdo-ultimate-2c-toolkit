@@ -176,6 +176,25 @@ class DongleWriteTest(unittest.TestCase):
         self.full = bytes(self.full)
         p = mock.patch.object(dongle, "STOCK_SHA256", K["stock_sha256"]); p.start(); self.addCleanup(p.stop)
 
+    def test_a_verified_write_isnt_an_error_when_the_restart_drops_the_device(self):
+        import errno
+        w = World(self.full)
+        opened = w.open
+
+        def open_dropping(info, rid):   # Linux: the node goes away as the bootloader restarts on command 7
+            ch = opened(info, rid)
+            if w.mode == "boot":
+                xfer = ch.xfer
+                def drop(r, timeout=0.5, accept=None):
+                    if int.from_bytes(r[1:3], "little") == 7:
+                        w.mode = "dongle"
+                        raise OSError(errno.ENODEV, "No such device")
+                    return xfer(r, timeout, accept)
+                ch.xfer = drop
+            return ch
+        self.assertTrue(dongle.apply(w.find, open_dropping, self.full, XBOX, lambda *a: None, wait=0.01))
+        self.assertEqual(bytes(w.flash[dongle.BASE:dongle.END]), XBOX)
+
     def test_backup_reads_the_whole_dongle_twice_and_keeps_it(self):
         path = dongle.backup(SimApp(self.full), self.store, lambda *a: None)
         self.assertTrue(path.name.startswith("dongle-"))

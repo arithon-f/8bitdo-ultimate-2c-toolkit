@@ -363,7 +363,11 @@ def apply(find, open_channel, unit_backup: bytes, bank: bytes, progress, wait: f
                 raise OpError("The dongle's firmware read back doesn't match what was written. " + INTERRUPTED)
         except protocol.ProtocolError as e:
             raise OpError(f"{e}. {INTERRUPTED}") from e
-        ch.xfer(boot.request(7), 0.5)
+        try:   # written and read back: the restart may drop the device before it answers (hidraw on Linux)
+            ch.xfer(boot.request(7), 0.5)
+        except OSError as e:
+            if e.errno not in _REENUMERATION_ERRNOS:
+                raise
     finally:
         ch.close()
     return _wait(find, "dongle", 10, wait) is not None
