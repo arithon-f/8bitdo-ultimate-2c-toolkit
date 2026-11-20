@@ -12,7 +12,7 @@ HARNESS = r"""
 typedef unsigned char u8; typedef unsigned short u16; typedef unsigned int u32;
 u32 BTN, RAW_BTN; u16 LX, LY, RX, RY, LT, RT;
 u8 REGS[0x1000] __attribute__((aligned(4))); volatile u16 RING_LEVEL;
-u8 PCT, FULL, SAVED, ALERTS_FLAG; u32 TIMER, RING_CODE = 1;
+u8 PCT, FULL, SAVED, ALERTS_FLAG; u16 MV; u32 TIMER, RING_CODE = 1;
 u8 REST_FLAG, MOTOR_L, MOTOR_R, MOTOR_HOLD;
 static int notifies, afters, stock_passes;
 void rest_poll(void);
@@ -24,10 +24,14 @@ void ring_command(u32 level, u32 save);
 void main_poll(void);
 void vendor_a(u8 *p);
 void vendor_b(u8 *p);
+void battery_vendor_a(u8 *p);
+void battery_vendor_b(u8 *p);
 void ring_reset(void);
 unsigned ring_level_now(void);
 void save_settings(void) { printf("SAVE %02x\n", SAVED); }
 void flash_unlock(void) {}
+void stock_clear(u8 *p, u32 v, u32 n) { for (u32 k = 0; k < n; k++) p[k] = v; }
+void stock_send(u8 *d, u32 n, u32 i) { printf("SEND"); for (int k = 0; k < 6; k++) printf(" %02x", d[k]); printf(" %u %u\n", n, i); }
 void flash_erase(u32 a) { printf("ERASE %x\n", a); }
 void flash_write(u32 a, u32 n, u8 *d) { printf("WRITE %x\n", a); }
 void flash_read(u32 a, u32 n, u8 *d) { for (u32 i = 0; i < n; i++) d[i] = 0xff; }
@@ -84,6 +88,7 @@ int main(void) {
         if (line[0] == 'K') { sscanf(line + 2, "%x", &RAW_BTN); continue; } /* the physical word alone */
         if (line[0] == 'Y') { sscanf(line + 2, "%x", &BTN); continue; }     /* the mapped word alone */
         if (line[0] == 'N') { RING_CODE = 0; continue; } /* no ring code installed */
+        if (line[0] == 'M') { unsigned v; sscanf(line + 2, "%u", &v); MV = v; continue; } /* the battery's mV */
         if (line[0] == 'P') { /* P <n>: n main-loop passes, 100 ms apart */
             unsigned n; sscanf(line + 2, "%u", &n);
             while (n--) { TIMER += 1600000; main_poll(); }
@@ -104,7 +109,7 @@ int main(void) {
         if (line[0] == 'A' || line[0] == 'Z') { /* vendor command hooks, by report bytes */
             u8 pk[8] = {0}; int n = 0; unsigned x;
             for (char *q = line + 2; n < 8 && sscanf(q, "%2x", &x) == 1; q += 2) pk[n++] = x;
-            if (line[0] == 'A') vendor_a(pk); else vendor_b(pk);
+            if (line[0] == 'A') battery_vendor_a(pk); else battery_vendor_b(pk);   /* what the hooks call */
             continue;
         }
         if (line[0] == 'W' || line[0] == 'Q') { /* W <flag> <n>: n rest_poll calls on zeroed registers; Q <n>: n more. Then the timer word and status */
@@ -570,6 +575,13 @@ def test_battery_pct_matches_the_time_left_in_the_measured_discharge():
     left = [100 * (len(med) - i) / len(med) for i in range(len(med))]
     err = [abs(p - l) for p, l in zip(battery_pcts(med), left)]
     assert max(err) < 4 and sum(err) / len(err) < 1.5, (max(err), sum(err) / len(err))
+
+
+def test_the_battery_command_answers_with_the_level():
+    out = Sim(pct=77, ext=1).add("M 3870", "A 8105005b").out()
+    assert "SEND 5b 4d 1e 0f 00 01 63 2" in out, out   # 77 %, 3870 mV, not charged, external power; 63 bytes on interface 2
+    assert "SEND 5b 64 30 10 01 01 63 2" in Sim(pct=100, ext=1, full=1).add("M 4144", "Z 8105005b").out()
+    assert not [x for x in Sim().add("M 3870", "A 8105005c").out() if x.startswith("SEND")]
 
 
 def test_a_low_reading_right_after_starting_doesnt_alert():

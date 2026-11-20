@@ -168,13 +168,13 @@ def _make() -> dict[str, Recipe]:
         *(Recipe(key + at, title, (), (
             Edit(0xA3FA, b"\0"),                                 # the ring doesn't light up at startup
             Edit(0xD4F0, _blob(f"ringhook{form}.bin")),          # LED task calls ring_tick for the ring
-            Edit(0xF83C, _blob(f"vhooka{form}.bin")),            # vendor commands reach ring_vendor
-            Edit(0xF842, _blob(f"vhookb{form}.bin")),
+            Edit(0xF83C, _blob(f"vhooka{form}.bin"), accepts=() if form else (_blob("vhooka10.bin"),)),   # vendor commands reach ring_vendor (since 1.2 through the battery command)
+            Edit(0xF842, _blob(f"vhookb{form}.bin"), accepts=() if form else (_blob("vhookb10.bin"),)),
             Edit(0xA484, _blob(f"pollhook{form}.bin"), superseded_by="cpu_rest"),  # main loop samples the L4 + R4 chord; cpu_rest takes the call over
             Edit(0x7640, bytes(0x90)),                           # dead RAM code, now the ring's and settings' state
             Edit(0x76D0, level.to_bytes(2, "little")),           # the level installed
             Edit(RING_CODE[0], _blob(f"ringtail{form}.bin").ljust(RING_CODE[1] - RING_CODE[0], b"\xff"),
-                 accepts=() if form else (_blob("ringtail10.bin").ljust(RING_CODE[1] - RING_CODE[0], b"\xff"),)),   # 1.0-1.1's, with the alerts at 15 % and 5 %
+                 accepts=() if form else tuple(_blob(f).ljust(RING_CODE[1] - RING_CODE[0], b"\xff") for f in ("ringtail10.bin", "ringtail12b.bin"))),   # 1.0-1.1.1's (alerts at 15 % and 5 %), 1.2 beta's (no battery command)
         ), "ring", earlier_form_of=key if form else None)
             for form, at in (("", ""), ("03", "@0.3")) for key, title, level in RING_LEVELS),
         *(Recipe(f"{key}@0.2", title, (), (

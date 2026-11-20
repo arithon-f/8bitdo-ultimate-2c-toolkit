@@ -173,10 +173,11 @@ class ControllerNameTest(unittest.TestCase):
         "pollhook.bin": "39f5251bcf8179cd85115b631cbeecd771dbe39fb856e6bc245156828b84694e",
         "ringhook.bin": "e5c2e40947f7369c2b0e4afe98c39395a0a1b9f9248de7ef69283e12b0d02330",
         "ringtail10.bin": "0e7f0b38fd8de0b272a270066ca681e9c660cecf29265279e8b107b4bacc0ae8",   # 1.0-1.1: alerts at 15 % and 5 %
+        "ringtail12b.bin": "196452d74f20e6c6541e2249b026d1650d2b6ce68540d8c868cc0d85d5c38849",   # 1.2 beta: no battery command
+        "vhooka10.bin": "9d23fcfe77ae92d7215d02012a693d4a93778e695c6ab3f56954694ee94ff858",   # 1.0-1.2 beta: straight to vendor_a
+        "vhookb10.bin": "e0c27de8ca721f16eb4541dc9e9a70cda2f7ed2ec67c5fa552317b1f9ae35bff",   # 1.0-1.2 beta: straight to vendor_b
         "rumble.bin": "7acd917ab3f4dd6a54ab272a19f13e877a010dc17f9d8c899e28ea52125af5cf",
         "sram.bin": "c3f0966446812c97bb976ba0f28b9a4b8a158939d6f158107faa747c3b546699",
-        "vhooka.bin": "9d23fcfe77ae92d7215d02012a693d4a93778e695c6ab3f56954694ee94ff858",
-        "vhookb.bin": "e0c27de8ca721f16eb4541dc9e9a70cda2f7ed2ec67c5fa552317b1f9ae35bff",
         }
         for name, sha in published.items():
             self.assertEqual(hashlib.sha256((recipes.BLOBS / name).read_bytes()).hexdigest(), sha, name)

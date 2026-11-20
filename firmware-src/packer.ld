@@ -37,7 +37,7 @@ SECTIONS
 	.wdog 0x20 : AT(0x6020) { *(.text.rest_main_poll) *(.text.rest_poll) }
 	.stall 0x248c : AT(0x848c) { *(.text.stall_hook) }
 	.sram 0x1210 : AT(0x7210) { *(.text.sram_guard) *(.text.scan_hook) *(.text.trigger) }
-	.ringtail 0x18400 : { *(.text.rumble_tail) *(.text*) *(.rodata*) }
+	.ringtail 0x18400 : { *(.text.rumble_tail) *(.text*) *(.rodata*) *(.battans) }
 	.rest : { *(.text*) *(.data*) *(.bss*) *(COMMON) }
 	/DISCARD/ : { *(.comment) }
 }

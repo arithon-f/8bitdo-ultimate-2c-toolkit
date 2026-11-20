@@ -9,9 +9,9 @@
 
 @ The two calls that check vendor commands, at 0xf83c (was tjl 0xf56c) and 0xf842 (was tjl 0xf594).
 	.section .vhooka, "ax"
-	tjl	vendor_a
+	tjl	battery_vendor_a
 	.section .vhookb, "ax"
-	tjl	vendor_b
+	tjl	battery_vendor_b
 
 @ The main loop's call at 0xa484: was tjl 0xcfa4 (the Start + Select check), now main_poll, which calls it after its own work.
 	.section .pollhook, "ax"

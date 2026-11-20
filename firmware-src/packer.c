@@ -206,12 +206,20 @@ void stock_vendor_a(u8 *p);                      /* 0xf56c */
 void stock_vendor_b(u8 *p);                      /* 0xf594 */
 void settings_poll(void);
 void settings_vendor(u8 *p);
+#ifdef HOST
+#define BATTANS
+#else
+#define BATTANS __attribute__((section(".battans")))   /* at the end of the Home ring's code: see battery_answer */
+#endif
+void stock_send(u8 *data, u32 n, u32 interface); /* 0xeb7c: an input report on a USB interface */
+void stock_clear(u8 *p, u32 value, u32 n);       /* 0x103f8, memset */
 
 #ifdef HOST
 #include <string.h>
 extern unsigned char REGS[];
 extern volatile u16 RING_LEVEL;
 extern u8 PCT, FULL, SAVED, ALERTS_FLAG;
+extern u16 MV;
 extern u32 TIMER, RAW_BTN;
 static struct ring_state ring_s;
 #define S ring_s
@@ -223,6 +231,7 @@ unsigned ring_level_now(void) { return ring_s.level; }
 #define RING_LEVEL (*(volatile u16 *)0x8416d0)  /* image 0x76d0: the level installed */
 #define PCT (*(volatile u8 *)0x843415)
 #define FULL (*(volatile u8 *)0x843423)
+#define MV (*(volatile u16 *)0x843424)      /* the battery in mV, which 0xb5a8 turns into PCT */
 #define SAVED (*(volatile u8 *)0x843929)        /* settings record +25 */
 #define ALERTS_FLAG (*(volatile u8 *)0x18ff0)
 #define TIMER (*(volatile u32 *)0x800740)
@@ -410,6 +419,26 @@ void ring_tick(u32 mode, u32 pin, u8 *counter)
 	}
 }
 
+/* 81 05 00 5b, by cable: the battery as the firmware sees it, since the channel's read (81 05 05) reaches flash only.
+ * The answer, on the update interface: 5b, the percentage, mV (u16), the charged latch, external power (PD0). It sits at
+ * the end of the Home ring's code (".battans", packer.ld), so the code before it keeps the addresses it shipped with. */
+BATTANS static void battery_answer(u8 *p)
+{
+	u8 r[64];
+	u32 mv = MV;
+
+	if (p[0] != 0x81 || p[1] != 5 || p[2] != 0 || p[3] != 0x5b)
+		return;
+	stock_clear(r, 0, 64);
+	r[0] = 0x5b;
+	r[1] = PCT;
+	r[2] = mv;
+	r[3] = mv >> 8;
+	r[4] = FULL;
+	r[5] = *IO(0x800518) & 1;
+	stock_send(r, 63, 2);
+}
+
 static void ring_vendor(u8 *p)
 {
 	if (p[0] != 0x81 || p[1] != 5 || p[2] != 0)
@@ -431,4 +460,17 @@ void vendor_b(u8 *p)
 {
 	ring_vendor(p);
 	stock_vendor_b(p);
+}
+
+/* The vendor command hooks at 0xf83c and 0xf842 call these (since 1.2), which answer 5b and then do what they did. */
+BATTANS void battery_vendor_a(u8 *p)
+{
+	battery_answer(p);
+	vendor_a(p);
+}
+
+BATTANS void battery_vendor_b(u8 *p)
+{
+	battery_answer(p);
+	vendor_b(p);
 }
