@@ -36,6 +36,10 @@ If a write was interrupted, use Restore: it works in update mode. To leave updat
 
 macOS remembers how a Bluetooth device described itself. After installing or removing a Bluetooth tweak, remove the controller from Bluetooth settings and pair it again.
 
+### macOS shows the controller's old name over Bluetooth
+
+macOS keeps the name it last saw for each Bluetooth device and uses it when the device connects, then reads the current one. So after you choose a new name and pair the controller again, macOS may show the old name, or 8BitDo's, in the battery widget and to games until the controller connects once more. Turn it off and on again and the new name appears. The name is in the controller either way.
+
 ### A game doesn't vibrate over Bluetooth
 
 Rumble over Bluetooth needs both the Xbox Series X|S tweak and the Rumble over Bluetooth tweak. Then open the Diagnostics tab and try the vibration both ways: the way a native game would, and by sending the report straight to the controller. If only the direct report vibrates, the firmware isn't the problem.
