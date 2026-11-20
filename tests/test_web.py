@@ -713,6 +713,9 @@ class OrphanTest(unittest.TestCase):
 
 
 class ShutdownTest(unittest.TestCase):
+    def setUp(self):   # serve() opens the browser when started by hand: not from the tests
+        p = mock.patch.dict("os.environ", {"U2C_NO_BROWSER": "1"}); p.start(); self.addCleanup(p.stop)
+
     def test_ctrl_c_closes_server_without_traceback(self):
         httpd = mock.MagicMock()
         httpd.server_address = ("127.0.0.1", 41941)

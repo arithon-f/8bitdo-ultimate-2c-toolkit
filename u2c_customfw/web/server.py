@@ -446,7 +446,7 @@ def serve(store: Path, port: int = 0) -> None:
         threading.Thread(target=exit_when_orphaned, args=(httpd.runner,), daemon=True).start()
     elif should_open_browser():
         print("Opening the app in your browser. If it doesn't open, open the address above, with its token.", flush=True)
-        webbrowser.open(url)
+        threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()   # a console browser waits until it ends
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
