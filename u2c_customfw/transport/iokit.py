@@ -26,6 +26,8 @@ for f, res, args in [
     (cf.CFNumberCreate, P, [P, L, P]),
     (cf.CFDictionaryCreate, P, [P, P, P, L, P, P]),
     (cf.CFArrayCreate, P, [P, P, L, P]),
+    (cf.CFURLCreateWithFileSystemPath, P, [P, P, L, C.c_bool]),
+    (cf.CFBundleCreate, P, [P, P]),
     (iok.IOHIDManagerCreate, P, [P, C.c_uint32]),
     (iok.IOHIDManagerSetDeviceMatching, None, [P, P]),
     (iok.IOHIDManagerSetDeviceMatchingMultiple, None, [P, P]),
@@ -66,6 +68,14 @@ def _release_manager(mgr):
 
 def _cfstr(s):
     return cf.CFStringCreateWithCString(None, s.encode(), 0x08000100)
+
+
+# IOHIDLib, the plug-in behind every IOHIDDevice, is unloaded whenever its last instance goes, which happens here when a
+# listing releases old managers. The controller's interfaces belong to Apple's Xbox driver, whose instances then come and
+# go against the unloaded plug-in ("No factory registered"), and once, as the controller restarted after a write, freeing
+# the plug-in's bundle crashed the core (CFRelease in __CFBundleDeallocate). Held here for the life of the process.
+_HIDLIB = cf.CFBundleCreate(None, cf.CFURLCreateWithFileSystemPath(
+    None, _cfstr("/System/Library/Extensions/IOHIDFamily.kext/Contents/PlugIns/IOHIDLib.plugin"), 0, True))
 
 
 def _prop(dev, key):

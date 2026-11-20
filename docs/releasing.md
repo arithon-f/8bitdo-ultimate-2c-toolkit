@@ -1,5 +1,6 @@
 # Releasing a new version
 
+0. If a tweak changed, check that its old bytes are an accepted form (the app then tells the people who have it, see CONTRIBUTING.md) and say in the release notes what changed and that installing the tweaks again updates it.
 1. Bump the version in `pyproject.toml`, `u2c_customfw/__init__.py` and `tests/test_smoke.py`, and run the tests.
 2. Commit, tag and push: `git tag -a vX.Y.Z -m "U2C Firmware Toolkit X.Y.Z"`, then `git push origin main vX.Y.Z`.
 3. Build the app and its zip for each architecture: `macos/build.sh` (writes `dist/firmware-toolkit-X.Y.Z-macos-arm64.zip`) and `macos/build.sh x86_64` (writes `dist/firmware-toolkit-X.Y.Z-macos-x86_64.zip`).

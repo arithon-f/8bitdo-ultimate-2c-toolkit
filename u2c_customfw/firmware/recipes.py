@@ -62,6 +62,7 @@ class State:
     known: bool
     recipes: tuple[str, ...] = ()
     outdated: bool = False  # has a tweak in the form an earlier version installed it
+    older: bool = False     # a tweak's code is an earlier version's (an accepted form): installing again updates it
 
 
 def _blob(name: str) -> bytes:
@@ -163,6 +164,13 @@ def _make() -> dict[str, Recipe]:
                  accepts=(_blob("battlog11.bin").ljust(0x9CAC - 0x9964, b"\0"),)),   # 1.1's, which unlocked the flash before each record
             Edit(0xA484, _blob("loghook.bin")),                  # the main loop's 100 ms call: the log first, then rest_main_poll
         )),
+        Recipe("bt_plain_icon", "No keyboard icon in macOS's battery widget", ("bt_xbox",), (   # with bt_xbox, never shown
+            # Telink's HID template has a Boot Keyboard Input Report (0x2a22, attribute 20), which makes macOS take the
+            # controller for a keyboard (bluetoothd: "Detected keyboard LE HID"); a real Xbox pad has none. Another UUID,
+            # which nothing reads, leaves the attribute where it is.
+            Edit(0x172BB, bytes.fromhex("22ff")),                # its UUID in attribute 19, the characteristic declaration
+            Edit(0x17422, bytes.fromhex("22ff")),                # and attribute 20's type
+        )),
         Recipe("ble_interval", "Bluetooth connection request of 12.5 ms", (), (
             Edit(0xA0DE, bytes.fromhex("0aa00aa100a2c8a3"), superseded_by="ble_fast"),  # min = max 12.5 ms, latency 0, timeout 2 s, instead of 7.5 ms and latency 59
         )),
@@ -258,9 +266,13 @@ def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha
     if len(bank_a) != image.APP_SIZE or _sha(masked(bank_a)) != remainder:
         return State(False)
 
+    accepted = set()   # (addr, size) of edits that hold an earlier version's bytes
+
     def edit_state(e):
         got = _region(bank_a, e)
         if got == e.new or got in e.accepts:
+            if got != e.new:
+                accepted.add((e.addr, e.size))
             return "new"
         if _sha(got) == regions[(e.addr, e.size)]:
             return "stock"
@@ -288,4 +300,5 @@ def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha
         if RECIPES[k].requires_group and not any(RECIPES[o].group == RECIPES[k].requires_group for o in present):
             return State(False)
     names = {RECIPES[k].earlier_form_of or k for k in present}
-    return State(True, tuple(sorted(names)), any(RECIPES[k].earlier_form_of for k in present))
+    older = any((e.addr, e.size) in accepted for k in present for e in RECIPES[k].edits if e.superseded_by not in present)
+    return State(True, tuple(sorted(names)), any(RECIPES[k].earlier_form_of for k in present), older=older)

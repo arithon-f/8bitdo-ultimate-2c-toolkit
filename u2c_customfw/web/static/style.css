@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-:root{color-scheme:dark;--caution:#e3b25a;--bg:#101215;--card:#171a1e;--card2:#1f2328;--fg:#e8eaed;--dim:#9aa1ab;--line:#2a2f36;--accent:#3fc8b4;--on-accent:#04211c;--warn:#e8695b;--on-warn:#1d0804;--warn-bg:rgba(232,105,91,.08)}
+:root{color-scheme:dark;--caution:#e3b25a;--bg:#101215;--card:#171a1e;--card2:#1f2328;--fg:#e8eaed;--dim:#9aa1ab;--line:#2a2f36;--accent:#3fc8b4;--on-accent:#04211c;--warn:#e8695b;--on-warn:#1d0804;--warn-bg:rgba(232,105,91,.08);--info:#86b7f0}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{-webkit-user-select:none;user-select:none}   /* an app, not a page: only text worth copying can be selected */
@@ -39,6 +39,7 @@ main{flex:1;overflow:auto;padding:14px 22px}
 .hero h1{font-size:23.5px;line-height:1.2;margin:6px 0 2px;letter-spacing:-.3px}
 .hero.bad h1{color:var(--warn)}
 .src{color:var(--dim);font-size:13.5px;margin:0}
+.upd{color:var(--info);font-size:13.5px;line-height:1.45;margin:8px 0 0}.upd::before{content:"\24D8\FE0E  "}
 .chips{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:14px 0 0}
 .chip{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;color:var(--dim)}
 .chip svg{width:14px;flex:none}.chip.on{color:var(--fg)}.chip.on svg{color:var(--accent)}

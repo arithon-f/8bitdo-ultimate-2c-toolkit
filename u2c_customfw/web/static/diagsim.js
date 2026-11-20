@@ -34,7 +34,7 @@
       if (!got.tweaks) return json(got);
       const recipes = all ? ["bt_xbox", "bt_rumble", "cable_360", "dim_leds", "battery_alerts", "settings", "fixes", "cpu_rest", "ring_5"] : ["bt_xbox", "ring_5", ...(query.get("settings") ? ["settings"] : [])];
       const tweaks = got.tweaks.map((t) => t.key === "ring" ? { ...t, title: "Home ring: 5 %", on: true } : { ...t, on: recipes.includes(t.key) });
-      return json({ ...got, recipes, titles: all ? tweaks.filter((t) => t.on).map((t) => t.title) : ["Dimmer LEDs", "Home ring: 5 %"], tweaks, ring_level: 2, outdated: !!query.get("outdated") });
+      return json({ ...got, recipes, titles: all ? tweaks.filter((t) => t.on).map((t) => t.title) : ["Dimmer LEDs", "Home ring: 5 %"], tweaks, ring_level: 2, outdated: !!query.get("outdated"), update: !!query.get("older") });
     }
     if (path.startsWith("/api/firmware") && query.get("identity") === "none") return json({ ...(await answer.json()), boot_identity: null });
     if (path.startsWith("/api/firmware") && query.get("nobackup")) {   // none of this controller's backups either

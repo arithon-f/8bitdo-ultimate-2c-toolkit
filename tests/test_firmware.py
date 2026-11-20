@@ -8,6 +8,7 @@ from pathlib import Path
 
 from u2c_customfw.firmware import image, recipes
 from u2c_customfw.firmware.recipes import RecipeError
+from u2c_customfw.ops import update_available, with_hidden
 
 KEYS = ["bt_xbox", "bt_rumble", "cable_360", "dim_leds"]
 VALID = [list(c) for n in range(5) for c in itertools.combinations(KEYS, n) if "bt_rumble" not in c or "bt_xbox" in c]
@@ -181,6 +182,41 @@ class PastThePayloadTest(unittest.TestCase):
     def test_the_ring_code_is_past_the_payload(self):
         img = recipes.build(self.stock, ["ring_5"], **self.k)
         self.assertNotEqual(img[0x18400 - image.BASE:0x18404 - image.BASE], b"\xff" * 4)
+
+
+class UpdateNoticeTest(unittest.TestCase):
+    """The rule: when a tweak changes, the person is told. A changed blob keeps its old bytes as an accepted form (see
+    test_the_published_tweaks_keep_their_bytes), and every accepted form must make the app say an update exists."""
+    ALL = ["bt_xbox", "bt_rumble", "cable_360", "dim_leds", "battery_alerts", "settings", "fixes", "stick_precision", "cpu_rest", "ring_5"]
+
+    def setUp(self):
+        self.stock, self.k = synthetic()
+
+    def test_every_earlier_form_of_a_tweak_says_an_update_exists(self):
+        keys = with_hidden(self.ALL)
+        fresh = recipes.build(self.stock, keys, **self.k)
+        st = recipes.identify(fresh, **self.k)
+        self.assertEqual((st.known, st.older, update_available(st)), (True, False, False))
+        checked = 0
+        for k in keys:
+            for e in recipes.RECIPES[k].edits:
+                if e.superseded_by in keys:
+                    continue
+                for old in e.accepts:
+                    img = bytearray(fresh); img[e.addr - image.BASE:e.addr - image.BASE + e.size] = old
+                    st = recipes.identify(bytes(img), **self.k)
+                    self.assertEqual((st.known, st.recipes), (True, tuple(sorted(keys))), (k, hex(e.addr)))
+                    self.assertTrue(st.older and update_available(st), (k, hex(e.addr)))
+                    checked += 1
+        self.assertGreaterEqual(checked, 3)   # rumble 0.2 and 0.3, 1.1's battery log
+
+    def test_a_missing_hidden_tweak_says_an_update_exists(self):
+        old = recipes.build(self.stock, [k for k in with_hidden(self.ALL) if k != "bt_plain_icon"], **self.k)   # what 1.1.0 installed
+        st = recipes.identify(old, **self.k)
+        self.assertTrue(st.known and not st.older and update_available(st))
+        self.assertFalse(update_available(recipes.identify(recipes.whole(self.stock), **self.k)), "the original firmware has nothing to update")
+        with self.assertRaises(RecipeError):
+            recipes.build(self.stock, ["bt_plain_icon"], **self.k)   # only with the Xbox identity over Bluetooth
 
 
 class FromEarlierVersionsTest(unittest.TestCase):
