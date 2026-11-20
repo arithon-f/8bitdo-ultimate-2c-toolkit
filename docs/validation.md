@@ -279,6 +279,9 @@ rest through the core of the built 1.2.0 beta 1 app, with the requests its page 
    back and kept the saved Home ring level.
 6. **The core stays up** across four restarts of the controller after writes. Before the IOHIDLib fix, the command line's
    core crashed once as the controller restarted after a write.
+7. **A chosen Bluetooth name** ("8BitDo 2C (Prueba)", 35 bytes): after forgetting the controller and pairing it again,
+   macOS lists it under that name (`045e:0b13`, battery 100 %). GameController's vendorName and IOKit's Product stay
+   "8BitDo Ultimate 2C Wireless" whatever the name, so Diagnostics still tells the 2C from a real Xbox controller by them.
 
-Not tried on hardware: a chosen Bluetooth name as macOS shows it (it needs pairing again), the dongle's names, Linux,
+Not tried on hardware: the dongle's names, Linux,
 Diagnostics with two Xbox controllers over Bluetooth, and a whole discharge with the new table and its alerts.
