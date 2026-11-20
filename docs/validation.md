@@ -280,8 +280,10 @@ rest through the core of the built 1.2.0 beta 1 app, with the requests its page 
 6. **The core stays up** across four restarts of the controller after writes. Before the IOHIDLib fix, the command line's
    core crashed once as the controller restarted after a write.
 7. **A chosen Bluetooth name** ("8BitDo 2C (Prueba)", 35 bytes): after forgetting the controller and pairing it again,
-   macOS lists it under that name (`045e:0b13`, battery 100 %). GameController's vendorName and IOKit's Product stay
-   "8BitDo Ultimate 2C Wireless" whatever the name, so Diagnostics still tells the 2C from a real Xbox controller by them.
+   macOS lists it under that name (`045e:0b13`, battery 100 %). Then, with the keyboard characteristic still there,
+   GameController's vendorName and IOKit's Product were the model's, "8BitDo Ultimate 2C Wireless"; after pairing with
+   `bt_plain_icon` (8), IOKit's Product is the chosen name. Diagnostics matches the two, which come from the same
+   device, and a real Xbox controller is named differently either way.
 8. **No keyboard in the battery widget** (`bt_plain_icon`, the template's Boot Keyboard Input Report `0x2a22` given
    another UUID, installed with the names "8BitDo Ultimate 2C (X/S)" and "8BitDo Ultimate 2C (360)", 58 bytes): after
    pairing again, `pmset -g accps` gives the controller no accessory category, as for a real Xbox pad, instead of
