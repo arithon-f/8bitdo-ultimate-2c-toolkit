@@ -313,3 +313,12 @@ On Carlos's brother's PC (CachyOS), from branch `1.2` with `install-linux.sh`, w
 line found the controller; in the web app, each with Check First before the write: a backup, Restore → Original, installing
 every tweak, and restoring the backup, all working. Diagnostics worked too. Found: the installer lacked the executable bit,
 and opening the address without its token loads the page but answers "forbidden"; the server now opens the browser itself.
+
+# The dongle's names (2026-11-20)
+
+On Carlos's dongle (1.03 with both tweaks), after a fresh backup: names written (45 bytes) and read back; with the controller
+over 2.4 GHz macOS showed the X-input name ("8BitDo Ultimate 2C (2.4 GHz)", `045e:028e` bcdDevice `0x0103`), and in
+D-input `2dc8:301c` bcdDevice `0x0001` with the D-input name ("8BitDo Ultimate 2C (D-input)"). Empty names put 8BitDo's
+back, byte for byte the bank from before. D-input also worked with the controller on 1.2 and on the original 1.09. Turning the
+controller on from off with B + Home leaves it in X-input; it takes B + Home held until it turns off, then Home with B still
+held (now in tweaks.md and the FAQ).
