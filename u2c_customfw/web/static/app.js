@@ -54,7 +54,7 @@ const RING_NAMES = { ring_normal: "normal", ring_25: "25 %", ring_5: "5 %", ring
 let ringKept = "", dongleRead = null;  // the Home ring level installed, kept by the next install; a level saved from Settings overrides it at power-on
 const RING_CODE_USERS = ["battery_alerts", "settings", "fixes", "stick_precision", "cpu_rest"];
 const needsRingCode = () => tweakBoxes().some((x) => RING_CODE_USERS.includes(x.value) && x.checked);
-const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval", "battery_table", ...(t.includes("cpu_rest") ? ["battery_log"] : [])] : t; };  // every install asks for 12.5 ms and has the measured battery level; with Processor rest, it keeps the battery log
+const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval", "battery_table", ...(t.includes("bt_xbox") ? ["bt_plain_icon"] : []), ...(t.includes("cpu_rest") ? ["battery_log"] : [])] : t; };  // every install asks for 12.5 ms and has the measured battery level; with Processor rest, it keeps the battery log
 const nameBoxes = () => [...document.querySelectorAll(".tname")];
 const showHeld = (b) => {   // the name the firmware holds goes in its box only when someone chose it
   const n = (fw && fw.names || {})[b.dataset.for], held = n && n.held && n.held !== b.dataset.default ? n.held : "";

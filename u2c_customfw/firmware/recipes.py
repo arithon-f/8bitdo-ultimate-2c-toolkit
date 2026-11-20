@@ -225,6 +225,13 @@ def _make() -> dict[str, Recipe]:
             Edit(0xB5C0, _blob("hpctb.bin")),                    # ... to the call that now gives the voltage to battery_pct
             Edit(0xB62C, _u32(3300)),                            # 1 % without smoothing only below 3300 mV, not below 3499
         )),
+        Recipe("bt_plain_icon", "No keyboard icon in macOS's battery widget", ("bt_xbox",), (   # with bt_xbox, never shown
+            # Telink's HID template has a Boot Keyboard Input Report (0x2a22, attribute 20), which makes macOS take the
+            # controller for a keyboard (bluetoothd: "Detected keyboard LE HID"); a real Xbox pad has none. Another UUID,
+            # which nothing reads, leaves the attribute where it is.
+            Edit(0x172BB, bytes.fromhex("22ff")),                # its UUID in attribute 19, the characteristic declaration
+            Edit(0x17422, bytes.fromhex("22ff")),                # and attribute 20's type
+        )),
         Recipe("ble_interval", "Bluetooth connection request of 12.5 ms", (), (
             Edit(0xA0DE, bytes.fromhex("0aa00aa100a2c8a3"), superseded_by="ble_fast"),  # min = max 12.5 ms, latency 0, timeout 2 s, instead of 7.5 ms and latency 59
         )),

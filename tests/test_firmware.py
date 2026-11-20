@@ -247,6 +247,10 @@ class UpdateNoticeTest(unittest.TestCase):
         self.assertTrue(st.known and not st.older and update_available(st))
         self.assertTrue(update_available(recipes.identify(recipes.build(self.stock, ["cpu_rest", "ring_5", "ble_interval", "battery_table"], **self.k), **self.k)), "1.0's Processor rest, without the log")
         self.assertFalse(update_available(recipes.identify(recipes.whole(self.stock), **self.k)), "the original firmware has nothing to update")
+        no_icon = recipes.build(self.stock, [k for k in with_hidden(self.ALL) if k != "bt_plain_icon"], **self.k)   # the Xbox identity before 1.2
+        self.assertTrue(update_available(recipes.identify(no_icon, **self.k)))
+        with self.assertRaises(RecipeError):
+            recipes.build(self.stock, ["bt_plain_icon"], **self.k)   # only with the Xbox identity over Bluetooth
 
 
 class FromEarlierVersionsTest(unittest.TestCase):

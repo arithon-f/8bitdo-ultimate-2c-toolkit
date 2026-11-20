@@ -282,6 +282,10 @@ rest through the core of the built 1.2.0 beta 1 app, with the requests its page 
 7. **A chosen Bluetooth name** ("8BitDo 2C (Prueba)", 35 bytes): after forgetting the controller and pairing it again,
    macOS lists it under that name (`045e:0b13`, battery 100 %). GameController's vendorName and IOKit's Product stay
    "8BitDo Ultimate 2C Wireless" whatever the name, so Diagnostics still tells the 2C from a real Xbox controller by them.
+8. **No keyboard in the battery widget** (`bt_plain_icon`, the template's Boot Keyboard Input Report `0x2a22` given
+   another UUID, installed with the names "8BitDo Ultimate 2C (X/S)" and "8BitDo Ultimate 2C (360)", 58 bytes): after
+   pairing again, `pmset -g accps` gives the controller no accessory category, as for a real Xbox pad, instead of
+   "Keyboard"; bluetoothd no longer logs "Detected keyboard LE HID", and the battery level still shows.
 
 Not tried on hardware: the dongle's names, Linux,
 Diagnostics with two Xbox controllers over Bluetooth, and a whole discharge with the new table and its alerts.
