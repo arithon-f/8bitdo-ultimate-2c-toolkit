@@ -202,11 +202,16 @@ final class Diagnostics: NSObject, WKScriptMessageHandler {
         IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         defer { IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone)) }
         let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> ?? []
-        let bluetooth = devices.first {  // a Bluetooth pad shows several HID interfaces: the one that takes the 8-byte report
+        let bluetooth = devices.filter {  // a Bluetooth pad shows several HID interfaces: the one that takes the 8-byte report
             (IOHIDDeviceGetProperty($0, kIOHIDTransportKey as CFString) as? String)?.contains("Bluetooth") == true
                 && (IOHIDDeviceGetProperty($0, kIOHIDMaxOutputReportSizeKey as CFString) as? Int ?? 0) >= 8
         }
-        guard let device = bluetooth else { return result(op, "No controller was found over Bluetooth.", id) }
+        // A real Xbox pad has the same IDs as the patched 2C: send to the one the tab shows, matched by name.
+        let shown = bluetooth.filter { IOHIDDeviceGetProperty($0, kIOHIDProductKey as CFString) as? String == pad?.vendorName }
+        guard let device = shown.count == 1 ? shown.first : bluetooth.count == 1 ? bluetooth.first : nil else {
+            return result(op, bluetooth.isEmpty ? "No controller was found over Bluetooth."
+                              : "More than one Xbox controller is connected over Bluetooth. Turn off the others and try again.", id)
+        }
         let status = IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 3, report, report.count)
         result(op, status == kIOReturnSuccess ? nil : "The report couldn't be sent (IOReturn \(String(UInt32(bitPattern: status), radix: 16))).", id)
     }

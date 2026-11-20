@@ -115,6 +115,14 @@ class CliTest(unittest.TestCase):
         self.assertRegex(text, r"Backup saved as “controller-\d{8}-\d{6}\.bin”\. The controller has the original firmware 1\.09\.")
         self.assertIn("sha256 ", text)   # for the command line only
 
+    def test_store_is_created_private(self):   # backups hold the pairings and calibration
+        for make in (state.accept, state.lock_device):
+            store = self.tmp / make.__name__
+            f = make(store)
+            if f:
+                f.close()
+            self.assertEqual(store.stat().st_mode & 0o777, 0o700)
+
     def test_installing_what_is_there_writes_nothing_and_says_so(self):
         state.accept(self.tmp)
         built = recipes.build(STOCK_A, ["cable_360", "ble_interval"], **K)
