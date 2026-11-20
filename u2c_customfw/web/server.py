@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -439,9 +440,13 @@ def make_server(store: Path, port: int = 0):
 def serve(store: Path, port: int = 0) -> None:
     httpd, token = make_server(store, port)
     page = os.environ.get("U2C_PAGE_QUERY", "") if os.environ.get("U2C_SIM") else ""   # macos/preview.sh: the page simulator, never with real devices
-    print(f"U2C_URL http://127.0.0.1:{httpd.server_address[1]}/?token={token}{page}", flush=True)
+    url = f"http://127.0.0.1:{httpd.server_address[1]}/?token={token}{page}"
+    print(f"U2C_URL {url}", flush=True)
     if os.environ.get("U2C_EXIT_ON_EOF"):   # started by the Mac app, which holds our stdin open while it lives
         threading.Thread(target=exit_when_orphaned, args=(httpd.runner,), daemon=True).start()
+    elif should_open_browser():
+        print("Opening the app in your browser. If it doesn't open, open the address above, with its token.", flush=True)
+        webbrowser.open(url)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -453,6 +458,12 @@ def serve(store: Path, port: int = 0) -> None:
                 print("Waiting for the current operation to finish...", flush=True)
             httpd.runner.cond.wait_for(lambda: not httpd.runner.running)
         httpd.server_close()
+
+
+def should_open_browser() -> bool:
+    """Started by hand (on Linux, or with python -m on a Mac): open the page with its token, which is easy to leave out
+    when copying the address. Not under the Mac app, which shows it itself, nor in the simulation the tests drive."""
+    return not os.environ.get("U2C_EXIT_ON_EOF") and not os.environ.get("U2C_SIM") and not os.environ.get("U2C_NO_BROWSER")
 
 
 def exit_when_orphaned(runner, stdin=None, wait: float = 1.0, exit=os._exit) -> None:

@@ -306,3 +306,10 @@ its page sends. The controller had firmware from a later development build, whic
 3. Checked on the same controller with the later build, whose code for these is the same: the battery log still writes
    with the flash protected, an install sent for the dongle with the controller connected is refused, and after pairing
    again with the plain icon the battery widget no longer shows a keyboard.
+
+# Linux (2026-11-20)
+
+On Carlos's brother's PC (CachyOS), from branch `1.2` with `install-linux.sh`, with his Ultimate 2C by cable. The command
+line found the controller; in the web app, each with Check First before the write: a backup, Restore → Original, installing
+every tweak, and restoring the backup, all working. Diagnostics worked too. Found: the installer lacked the executable bit,
+and opening the address without its token loads the page but answers "forbidden"; the server now opens the browser itself.

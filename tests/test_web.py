@@ -670,6 +670,15 @@ class WebTest(unittest.TestCase):
         self.assertEqual(e.exception.code, 403)
 
 
+class BrowserTest(unittest.TestCase):
+    def test_started_by_hand_the_page_opens_in_the_browser_but_not_under_the_mac_app_or_the_simulation(self):
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertTrue(server.should_open_browser())
+        for env in ({"U2C_EXIT_ON_EOF": "1"}, {"U2C_SIM": "1"}, {"U2C_NO_BROWSER": "1"}):
+            with mock.patch.dict("os.environ", env, clear=True):
+                self.assertFalse(server.should_open_browser(), env)
+
+
 class SimulationStoreTest(unittest.TestCase):
     def test_the_simulation_leaves_the_real_store_alone(self):
         import os

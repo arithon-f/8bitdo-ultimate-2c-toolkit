@@ -27,7 +27,7 @@ Installation complete.
 Unplug and reconnect the controller and 2.4 GHz receiver.
 Then run:
   $ROOT/.venv/bin/python -m u2c_customfw devices
-  $ROOT/.venv/bin/python -m u2c_customfw.web
+  $ROOT/.venv/bin/python -m u2c_customfw.web      (opens the app in your browser)
 
 Do not run the toolkit with sudo. Use the local desktop session so udev's
 TAG+=uaccess permission is applied to your user.

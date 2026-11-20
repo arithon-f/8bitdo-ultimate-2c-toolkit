@@ -17,7 +17,7 @@ From the repository root:
 ./install-linux.sh
 ```
 
-The installer creates `.venv`, installs the Python package and installs `udev/70-8bitdo-ultimate-2c.rules` using `sudo`. Unplug and reconnect the controller and dongle after installation. `TAG+="uaccess"` grants permissions to an active local desktop session with systemd-logind; headless setups may need custom permissions. **Do not run the toolkit as root.**
+If the installer doesn't run (a copy without the executable bit), use `bash install-linux.sh`. The installer creates `.venv`, installs the Python package and installs `udev/70-8bitdo-ultimate-2c.rules` using `sudo`. Unplug and reconnect the controller and dongle after installation. `TAG+="uaccess"` grants permissions to an active local desktop session with systemd-logind; headless setups may need custom permissions. **Do not run the toolkit as root.**
 
 Manual installation is also possible:
 
@@ -27,6 +27,8 @@ python3 -m venv .venv
 .venv/bin/python -m u2c_customfw devices
 .venv/bin/python -m u2c_customfw.web
 ```
+
+The last command opens the app in your browser. If it doesn't, open the address it prints, including `?token=…`: without the token the page loads but can't reach the controller ("forbidden").
 
 ## Diagnostics
 
