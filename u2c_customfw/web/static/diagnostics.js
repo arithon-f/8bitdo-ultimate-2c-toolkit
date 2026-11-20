@@ -145,7 +145,7 @@ function paintBattery() {
   const own = testState.battery, c = cableBattery;
   const none = !own || own.level < 0 || (own.state === "unknown" && own.level === 0);
   row.textContent = none && c && byCable()
-    ? (c.unavailable ? "Install the tweaks again to read it by cable" : c.full ? "Charged (read from the controller)" : `${c.percent} %${c.charging ? ", charging" : ""} (read from the controller)`)
+    ? (c.unavailable ? "Install the tweaks with this version of the app, with a Home ring level, to read it by cable" : c.full ? "Charged (read from the controller)" : `${c.percent} %${c.charging ? ", charging" : ""} (read from the controller)`)
     : batteryText(own);
 }
 

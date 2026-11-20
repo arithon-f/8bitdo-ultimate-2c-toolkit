@@ -54,15 +54,24 @@ final class MenuBattery: NSObject {
         ask { [weak self] answer in DispatchQueue.main.async { self?.update(answer) } }
     }
 
+    private var unanswered = 0
+
     private func update(_ answer: [String: Any]?) {
-        guard let answer = answer, answer["busy"] as? Bool != true else { return }   // not ready, or busy: keep the last one
+        guard let answer = answer else {   // the core isn't answering: after a minute and a half, don't show a stale level
+            unanswered += 1
+            if unanswered >= 3 { line.title = "The app isn't reading the controller."; draw(symbol: "gamecontroller", text: "") }
+            return
+        }
+        unanswered = 0
+        guard answer["busy"] as? Bool != true else { return }   // a task has the controller: keep the last one
         let source = answer["source"] as? String
         if source == "cable", answer["unavailable"] as? Bool == true {
-            line.title = "Install the tweaks again to read the battery by cable."
+            line.title = "Install the tweaks with this version of the app, with a Home ring level, to read the battery by cable."
             return draw(symbol: "gamecontroller", text: "")
         }
         guard let percent = answer["percent"] as? Int else {
-            line.title = "No controller connected by cable or over Bluetooth."
+            line.title = source == "bluetooth" ? "\(answer["name"] as? String ?? "The controller") over Bluetooth: macOS doesn't report its level."
+                : "No controller connected by cable or over Bluetooth."
             return draw(symbol: "gamecontroller", text: "")
         }
         let full = answer["full"] as? Bool == true, charging = answer["charging"] as? Bool == true
@@ -79,6 +88,7 @@ final class MenuBattery: NSObject {
     private static let width = ceil(("100%" as NSString).size(withAttributes: [.font: font]).width) + 2
 
     private func draw(symbol: String, text: String) {
+        item?.button?.toolTip = line.title
         guard let button = item?.button, drawn != symbol + text else { return }
         drawn = symbol + text
         let height = NSStatusBar.system.thickness
@@ -97,6 +107,5 @@ final class MenuBattery: NSObject {
         }
         image.isTemplate = true
         button.image = image
-        button.toolTip = line.title
     }
 }

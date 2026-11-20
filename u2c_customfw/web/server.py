@@ -127,6 +127,8 @@ def make_server(store: Path, port: int = 0):
             """The battery for the Diagnostics tab and the menu bar item: the controller's own reading by cable, or macOS's
             over Bluetooth when exactly one Xbox-ID pad is connected. {} when there's nothing to read; {"busy": true} while a
             task or another front end has the controller."""
+            if not self.auth():
+                return
             found = cli.find()
             cable = [f for f in found if f.mode in ("cable", "cable_360")]
             if len(cable) == 1:
@@ -148,8 +150,11 @@ def make_server(store: Path, port: int = 0):
                     runner.release()
                 return self.send(200, json.dumps(answer))
             bluetooth = [f for f in found if f.mode == "bluetooth_xbox"]
-            percent = battery_ops.bluetooth_percent(bluetooth[0].info.name) if len(bluetooth) == 1 else None
-            return self.send(200, json.dumps({"source": "bluetooth", "percent": percent, "name": bluetooth[0].info.name} if percent is not None else {}))
+            if len(bluetooth) != 1:
+                return self.send(200, json.dumps({}))
+            name = bluetooth[0].info.name
+            percent = battery_ops.bluetooth_percent(name)
+            return self.send(200, json.dumps({"source": "bluetooth", "name": name, **({"percent": percent} if percent is not None else {})}))
 
         def api_busy(self):
             """For the Mac app's quit and close guard: the server knows, even when the page has lost track."""

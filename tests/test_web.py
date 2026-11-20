@@ -66,8 +66,18 @@ class WebTest(unittest.TestCase):
         with mock.patch.object(cli, "find", lambda: [devices.Found(bt, "bluetooth_xbox")]), \
                 mock.patch.object(battery_ops, "bluetooth_percent", lambda name: 64 if name == "8BitDo Ultimate 2C (X/S)" else None):
             self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {"source": "bluetooth", "percent": 64, "name": "8BitDo Ultimate 2C (X/S)"})
+        with mock.patch.object(cli, "find", lambda: [devices.Found(bt, "bluetooth_xbox")]), mock.patch.object(battery_ops, "bluetooth_percent", lambda name: None):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {"source": "bluetooth", "name": "8BitDo Ultimate 2C (X/S)"})   # macOS has no level
         with mock.patch.object(cli, "find", lambda: [devices.Found(bt, "bluetooth_xbox"), devices.Found(bt, "bluetooth_xbox")]):
             self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {})   # two Xbox-ID pads: which one is unknown
+        self.assertEqual(self.call("GET", "/api/battery", token=None)[0], 403)
+
+    def test_a_short_read_in_this_core_is_waited_for(self):
+        runner = jobs.Runner(self.store)
+        self.assertTrue(runner.claim())
+        threading.Timer(0.3, runner.release).start()   # the battery poll, finishing
+        self.assertTrue(runner.claim())   # the page's firmware read gets the controller instead of "another task"
+        runner.release()
 
     def test_the_battery_log_is_read_by_cable_and_saved_as_csv(self):
         import struct

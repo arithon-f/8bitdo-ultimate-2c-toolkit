@@ -49,9 +49,13 @@ class Runner:
         self.running, self.writing, self.awake = False, False, None
         self.cond.notify_all()
 
+    WAIT = 3.0   # s: another short read in this core (the battery's, every 30 s) ends well within it
+
     def claim(self) -> bool:
-        """Take the device for a short read outside the job system (the firmware read); False if it is in use."""
+        """Take the device for a short read outside the job system (the firmware read); False if it is in use. A short
+        read already running in this core is waited for, so polling the battery doesn't turn the page's reads away."""
         with self.cond:
+            self.cond.wait_for(lambda: not self.running, timeout=self.WAIT)
             return self._take()
 
     def release(self) -> None:
@@ -60,6 +64,7 @@ class Runner:
 
     def start(self, name: str, **params) -> bool:
         with self.cond:
+            self.cond.wait_for(lambda: not self.running, timeout=self.WAIT)
             if not self._take():
                 return False
             self.events, self.writing = [], bool(params.get("write"))
