@@ -109,6 +109,14 @@ class CliTest(unittest.TestCase):
         self.assertTrue(text.rstrip().endswith("Installed. The controller hasn't come back yet: if macOS asks whether to allow the accessory to connect, allow it. "
                                                "Otherwise unplug the controller, hold Home for about 12 seconds until it turns off, then connect it again. If you changed a Bluetooth tweak, remove the controller in System Settings → Bluetooth and pair it again."), text)
 
+    def test_store_is_created_private(self):   # backups hold the pairings and calibration
+        for make in (state.accept, state.lock_device):
+            store = self.tmp / make.__name__
+            f = make(store)
+            if f:
+                f.close()
+            self.assertEqual(store.stat().st_mode & 0o777, 0o700)
+
     def test_patch_writes_the_names_given(self):
         state.accept(self.tmp)
         dev = SimBoot(self.flash)

@@ -35,7 +35,7 @@ class NameTest(unittest.TestCase):
         self.assertIn("Formula/firmware-toolkit.rb", workflow)
         self.assertIn("Casks/firmware-toolkit.rb", workflow)
         readme = (ROOT / "README.md").read_text()
-        self.assertIn("carlosbrownef-source/tap/firmware-toolkit", readme)
+        self.assertIn("arithon-f/tap/firmware-toolkit", readme)
         self.assertNotIn("tap/u2c-customfw", readme)
 
     def test_the_identifiers_macos_and_the_backups_depend_on_stay(self):

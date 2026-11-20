@@ -612,7 +612,7 @@ class ControllerTestCard(PageCase):
         self.assertNotIn("hidden", dom.find("update").attrs)
         self.assertEqual(dom.find("update-version").all_text(), "9.9.9")
         self.assertEqual(dom.find("update-link").all_text(), "Download it from GitHub")
-        self.assertEqual(dom.find("update-link").attrs.get("href"), "https://github.com/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/releases/tag/v9.9.9")
+        self.assertEqual(dom.find("update-link").attrs.get("href"), "https://github.com/arithon-f/8bitdo-ultimate-2c-toolkit/releases/tag/v9.9.9")
 
     def test_a_ring_level_is_not_kept_once_the_original_firmware_is_read(self):
         dom, _, _ = self.body("boot&tweaks=1&scenario=restored")

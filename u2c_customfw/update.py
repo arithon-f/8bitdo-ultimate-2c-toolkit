@@ -6,7 +6,7 @@ import urllib.request
 
 from . import __version__
 
-REPO = "carlosbrownef-source/8bitdo-ultimate-2c-toolkit"
+REPO = "arithon-f/8bitdo-ultimate-2c-toolkit"
 LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"   # never a prerelease or a draft
 VERSION = re.compile(r"v?(\d+)\.(\d+)\.(\d+)(?:b(\d+)|-beta\.(\d+))?")
 

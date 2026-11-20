@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# On each release, point the formula and cask in carlosbrownef-source/homebrew-tap at it.
+# On each release, point the formula and cask in arithon-f/homebrew-tap at it.
 name: homebrew
 on:
   release:
@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: carlosbrownef-source/homebrew-tap
+          repository: arithon-f/homebrew-tap
           ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
       - env:
           GH_TOKEN: ${{ github.token }}

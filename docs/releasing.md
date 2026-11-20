@@ -9,7 +9,7 @@
 ## Homebrew
 
 Publishing the release runs `.github/workflows/homebrew.yml`, which points the formula and cask in
-[carlosbrownef-source/homebrew-tap](https://github.com/carlosbrownef-source/homebrew-tap) at the new tag and zip
+[arithon-f/homebrew-tap](https://github.com/arithon-f/homebrew-tap) at the new tag and zip
 (version, and the SHA-256 of each zip: the cask picks the arm64 or x86_64 one) and commits them as `github-actions[bot]`. Nothing has to be edited by hand.
 
 - Check that it ran: the **homebrew** run under Actions, and a commit "firmware-toolkit X.Y.Z" in the tap.
