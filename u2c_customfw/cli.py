@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import fetch, state
 from .firmware import image, recipes
-from .ops import backup as bkp, devices, dongle as dng, patch, probe, report, restore, shown
+from .ops import backup as bkp, devices, dongle as dng, patch, probe, report, restore, shown, update_available, with_hidden
 from .ops.log import get_logger
 from .ops.plan import OpError
 from . import protocol
@@ -26,6 +26,7 @@ NOT_ENTERED = "The controller didn't restart into update mode, so nothing was wr
 IN_UPDATE_MODE = "The controller is in update mode and nothing was written. Try again: the app installs and restores from there too."
 BOOT_WAIT, BACK_WAIT, STEP = 8, 10, 0.3   # seconds: to reach update mode, to come back from it, between looks
 UNCHANGED = "The controller already has this firmware, so nothing was written."
+UPDATE = "This app has newer versions of some of the tweaks on this controller. Install the tweaks again to update them; the same tweaks stay chosen."
 CHECKED = "The check passed and nothing was written."
 DONGLE_DONE = "Done. The dongle restarted with its new firmware. Turn the controller on to use it."
 DONGLE_REPLUG = "Done. Unplug the dongle and plug it back in, then turn the controller on to use it."
@@ -200,6 +201,8 @@ def cmd_identify(args, store):
     bank_a = data[image.BASE:image.APP_END] if len(data) == image.FLASH_SIZE else data
     s = recipes.identify(bank_a)
     args.say(("original 1.09" + (f" with tweaks: {', '.join(shown(s.recipes))}" if shown(s.recipes) else "")) if s.known else "unknown firmware")
+    if update_available(s):
+        args.say(UPDATE)
 
 
 def unit_backups(ch, store, mode="boot", whole=True):
@@ -330,8 +333,7 @@ def cmd_patch(args, store):
             if k not in keys:
                 raise Exit(2, f"--{'xinput' if k == 'dongle_360' else 'dinput'}-name needs the {k} tweak. Nothing was written.")
         return _dongle_change(args, store, f, keys, chosen=chosen)
-    keys += ["ble_interval"] if keys and "ble_interval" not in keys else []   # as the app: every install asks for 12.5 ms
-    keys += ["battery_log"] if "cpu_rest" in keys and "battery_log" not in keys else []   # and keeps the battery log
+    keys = with_hidden(keys)   # as the app: the 12.5 ms request and the battery level in every install, the log with Processor rest
     names = {k: v for k, v in (("bt_xbox", getattr(args, "bt_name", None)), ("cable_360", getattr(args, "cable_name", None))) if v is not None}
     for k in names:
         if k not in keys:

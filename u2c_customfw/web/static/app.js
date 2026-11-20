@@ -54,7 +54,7 @@ const RING_NAMES = { ring_normal: "normal", ring_25: "25 %", ring_5: "5 %", ring
 let ringKept = "", dongleRead = null;  // the Home ring level installed, kept by the next install; a level saved from Settings overrides it at power-on
 const RING_CODE_USERS = ["battery_alerts", "settings", "fixes", "stick_precision", "cpu_rest"];
 const needsRingCode = () => tweakBoxes().some((x) => RING_CODE_USERS.includes(x.value) && x.checked);
-const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval", ...(t.includes("cpu_rest") ? ["battery_log"] : [])] : t; };  // every install asks for 12.5 ms; with Processor rest, it keeps the battery log
+const tweaks = () => { const t = [...tweakBoxes().filter((x) => x.checked).map((x) => x.value), ...(ringKept ? [ringKept] : needsRingCode() ? ["ring_normal"] : [])]; return t.length ? [...t, "ble_interval", "battery_table", ...(t.includes("cpu_rest") ? ["battery_log"] : [])] : t; };  // every install asks for 12.5 ms and has the measured battery level; with Processor rest, it keeps the battery log
 const nameBoxes = () => [...document.querySelectorAll(".tname")];
 const showHeld = (b) => {   // the name the firmware holds goes in its box only when someone chose it
   const n = (fw && fw.names || {})[b.dataset.for], held = n && n.held && n.held !== b.dataset.default ? n.held : "";
@@ -112,6 +112,7 @@ function hero(devs, ctrl, boot) {
   $("pic").innerHTML = (dongle && !ctrl) || dongleBoot ? dongleArt(cls === "none") : pad(led, cls === "none");
   const n = chips ? chips.filter((t) => t.on).length : 0;
   $("sumrow").hidden = !chips;
+  $("fw-update").hidden = !(chips && fw.update);   // a tweak changed since it was installed: say so, every time
   $("sum").textContent = !n ? "No tweaks installed." : `${n} ${n === 1 ? "tweak" : "tweaks"} installed.`;
   const box = $("chips"); box.textContent = ""; showDetails(detailsOpen && !!chips);
   const order = [...tweakBoxes().map((x) => x.value), "ring"];   // installed first, each group as the toggles, the Home ring last

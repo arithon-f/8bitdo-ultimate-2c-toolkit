@@ -470,6 +470,7 @@ class WebTest(unittest.TestCase):
                 mock.patch.object(recipes, "_constants", lambda a=None, b=None, c=None: (K["stock_sha256"], K["region_sha256"], K["remainder_sha256"])):
             data = json.loads(self.call("GET", "/api/firmware")[1])
         self.assertIsNone(data["restore_backup"])
+        self.assertFalse(data["update"])   # the original firmware: nothing to update
 
     def test_firmware_endpoint_by_cable_names_the_backup_restore_uses(self):
         flash = controller_flash()

@@ -321,9 +321,9 @@ static void alerts(void)
 		a = full ? ALERT_NONE : ALERT_CHARGING;
 	else if (S.ticks < START_TICKS)
 		a = ALERT_NONE;
-	else if (pct <= 5 || (a == ALERT_VERY_LOW && pct < 7))
+	else if (pct <= 1 || (a == ALERT_VERY_LOW && pct < 3))   /* with battery_table: about 30 minutes left ... */
 		a = ALERT_VERY_LOW;
-	else if (pct <= 15 || (a >= ALERT_LOW && pct < 18))
+	else if (pct <= 6 || (a >= ALERT_LOW && pct < 9))        /* ... and about 2 hours */
 		a = ALERT_LOW;
 	else
 		a = ALERT_NONE;

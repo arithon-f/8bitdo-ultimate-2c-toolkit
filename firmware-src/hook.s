@@ -65,6 +65,12 @@
 @ and the Bluetooth branch's call to the motor setter at 0xa4ae (was tjl 0xfa68) goes to stall_hook, which still makes it.
 	.section .resthook, "ax"
 	tjl	rest_main_poll
+@ The battery percentage (battery_table): 0xb5a8 jumps over stock's linear formula at 0xb5b6 to the call at 0xb5c0, which
+@ was tjl 0x850c (the division) and now gives the voltage in r0 to battery_pct (battery.c).
+	.section .hpcta, "ax"
+	tj	. + 10
+	.section .hpctb, "ax"
+	tjl	battery_pct
 @ With the battery log (battery_log), the same call goes to log_main_poll (rest.c, in place at 0x9964), which then calls rest_main_poll.
 	.section .loghook, "ax"
 	tjl	log_main_poll

@@ -80,6 +80,7 @@ class State:
     known: bool
     recipes: tuple[str, ...] = ()
     outdated: bool = False  # has a tweak in the form an earlier version installed it
+    older: bool = False     # a tweak's code is an earlier version's (an accepted form): installing again updates it
     names: dict[str, str] = field(default_factory=dict)  # recipe -> the name it holds, for the recipes with a NameSlot
 
 
@@ -172,7 +173,8 @@ def _make() -> dict[str, Recipe]:
             Edit(0xA484, _blob(f"pollhook{form}.bin"), superseded_by="cpu_rest"),  # main loop samples the L4 + R4 chord; cpu_rest takes the call over
             Edit(0x7640, bytes(0x90)),                           # dead RAM code, now the ring's and settings' state
             Edit(0x76D0, level.to_bytes(2, "little")),           # the level installed
-            Edit(RING_CODE[0], _blob(f"ringtail{form}.bin").ljust(RING_CODE[1] - RING_CODE[0], b"\xff")),
+            Edit(RING_CODE[0], _blob(f"ringtail{form}.bin").ljust(RING_CODE[1] - RING_CODE[0], b"\xff"),
+                 accepts=() if form else (_blob("ringtail10.bin").ljust(RING_CODE[1] - RING_CODE[0], b"\xff"),)),   # 1.0-1.1's, with the alerts at 15 % and 5 %
         ), "ring", earlier_form_of=key if form else None)
             for form, at in (("", ""), ("03", "@0.3")) for key, title, level in RING_LEVELS),
         *(Recipe(f"{key}@0.2", title, (), (
@@ -216,6 +218,12 @@ def _make() -> dict[str, Recipe]:
             Edit(0x9964, _blob("battlog.bin").ljust(0x9CAC - 0x9964, b"\0"),   # log_main_poll and battlog_poll, in the dead soft-float subtraction
                  accepts=(_blob("battlog11.bin").ljust(0x9CAC - 0x9964, b"\0"),)),   # 1.1's, which unlocked the flash before each record
             Edit(0xA484, _blob("loghook.bin")),                  # the main loop's 100 ms call: the log first, then rest_main_poll
+        )),
+        Recipe("battery_table", "Battery level from a measured discharge", (), (   # in every install, never shown
+            Edit(0x9CEC, _blob("battpct.bin").ljust(0x9D40 - 0x9CEC, b"\0")),   # battery_pct, in the dead count-leading-zeros and ffs
+            Edit(0xB5B6, _blob("hpcta.bin")),                    # 0xb5a8 jumps over stock's linear formula ...
+            Edit(0xB5C0, _blob("hpctb.bin")),                    # ... to the call that now gives the voltage to battery_pct
+            Edit(0xB62C, _u32(3300)),                            # 1 % without smoothing only below 3300 mV, not below 3499
         )),
         Recipe("ble_interval", "Bluetooth connection request of 12.5 ms", (), (
             Edit(0xA0DE, bytes.fromhex("0aa00aa100a2c8a3"), superseded_by="ble_fast"),  # min = max 12.5 ms, latency 0, timeout 2 s, instead of 7.5 ms and latency 59
@@ -328,11 +336,15 @@ def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha
         if text is not None and all(_region(bank_a, e) == e.text(text) for e in r.edits if e.text):
             held |= {(e.addr, e.size): text for e in r.edits if e.text}
 
+    accepted = set()   # (addr, size) of edits that hold an earlier version's bytes
+
     def edit_state(e):
         got = _region(bank_a, e)
         if e.text and (e.addr, e.size) in held:   # a name, which may happen to equal 8BitDo's bytes here: as the recipe's other edits
             return "any" if _sha(got) == regions[(e.addr, e.size)] else "new"
         if got == e.new or got in e.accepts:
+            if got != e.new:
+                accepted.add((e.addr, e.size))
             return "new"
         if _sha(got) == regions[(e.addr, e.size)]:
             return "stock"
@@ -363,4 +375,5 @@ def identify(bank_a: bytes, stock_sha256=None, region_sha256=None, remainder_sha
             return State(False)
     keys = {RECIPES[k].earlier_form_of or k for k in present}
     chosen_names = {k: held[(e.addr, e.size)] for k in present for e in RECIPES[k].edits if e.text and (e.addr, e.size) in held}
-    return State(True, tuple(sorted(keys)), any(RECIPES[k].earlier_form_of for k in present), chosen_names)
+    older = any((e.addr, e.size) in accepted for k in present for e in RECIPES[k].edits if not e.text and e.superseded_by not in present)
+    return State(True, tuple(sorted(keys)), any(RECIPES[k].earlier_form_of for k in present), names=chosen_names, older=older)

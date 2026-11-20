@@ -8,6 +8,7 @@ from pathlib import Path
 
 from u2c_customfw.firmware import image, recipes
 from u2c_customfw.firmware.recipes import RecipeError
+from u2c_customfw.ops import update_available, with_hidden
 
 KEYS = ["bt_xbox", "bt_rumble", "cable_360", "dim_leds"]
 VALID = [list(c) for n in range(5) for c in itertools.combinations(KEYS, n) if "bt_rumble" not in c or "bt_xbox" in c]
@@ -171,7 +172,7 @@ class ControllerNameTest(unittest.TestCase):
         "hunplug.bin": "6beee17a70d71fa42438a212ba1b33b3829acdde507e30348e323cee8f703fe6",
         "pollhook.bin": "39f5251bcf8179cd85115b631cbeecd771dbe39fb856e6bc245156828b84694e",
         "ringhook.bin": "e5c2e40947f7369c2b0e4afe98c39395a0a1b9f9248de7ef69283e12b0d02330",
-        "ringtail.bin": "0e7f0b38fd8de0b272a270066ca681e9c660cecf29265279e8b107b4bacc0ae8",
+        "ringtail10.bin": "0e7f0b38fd8de0b272a270066ca681e9c660cecf29265279e8b107b4bacc0ae8",   # 1.0-1.1: alerts at 15 % and 5 %
         "rumble.bin": "7acd917ab3f4dd6a54ab272a19f13e877a010dc17f9d8c899e28ea52125af5cf",
         "sram.bin": "c3f0966446812c97bb976ba0f28b9a4b8a158939d6f158107faa747c3b546699",
         "vhooka.bin": "9d23fcfe77ae92d7215d02012a693d4a93778e695c6ab3f56954694ee94ff858",
@@ -212,6 +213,40 @@ class PastThePayloadTest(unittest.TestCase):
     def test_the_ring_code_is_past_the_payload(self):
         img = recipes.build(self.stock, ["ring_5"], **self.k)
         self.assertNotEqual(img[0x18400 - image.BASE:0x18404 - image.BASE], b"\xff" * 4)
+
+
+class UpdateNoticeTest(unittest.TestCase):
+    """The rule: when a tweak changes, the person is told. A changed blob keeps its old bytes as an accepted form (see
+    test_the_published_tweaks_keep_their_bytes), and every accepted form must make the app say an update exists."""
+    ALL = ["bt_xbox", "bt_rumble", "cable_360", "dim_leds", "battery_alerts", "settings", "fixes", "stick_precision", "cpu_rest", "ring_5"]
+
+    def setUp(self):
+        self.stock, self.k = synthetic()
+
+    def test_every_earlier_form_of_a_tweak_says_an_update_exists(self):
+        keys = with_hidden(self.ALL)
+        fresh = recipes.build(self.stock, keys, **self.k)
+        st = recipes.identify(fresh, **self.k)
+        self.assertEqual((st.known, st.older, update_available(st)), (True, False, False))
+        checked = 0
+        for k in keys:
+            for e in recipes.RECIPES[k].edits:
+                if e.text or (e.superseded_by in keys):   # names are the person's choice, not a tweak's code
+                    continue
+                for old in e.accepts:
+                    img = bytearray(fresh); img[e.addr - image.BASE:e.addr - image.BASE + e.size] = old
+                    st = recipes.identify(bytes(img), **self.k)
+                    self.assertEqual((st.known, st.recipes), (True, tuple(sorted(keys))), (k, hex(e.addr)))
+                    self.assertTrue(st.older and update_available(st), (k, hex(e.addr)))
+                    checked += 1
+        self.assertGreaterEqual(checked, 4)   # rumble 0.2 and 0.3, the 1.0-1.1 ring code, 1.1's battery log
+
+    def test_a_hidden_tweak_that_every_install_has_now_says_an_update_exists(self):
+        old = recipes.build(self.stock, [k for k in with_hidden(self.ALL) if k != "battery_table"], **self.k)   # what 1.1 installed
+        st = recipes.identify(old, **self.k)
+        self.assertTrue(st.known and not st.older and update_available(st))
+        self.assertTrue(update_available(recipes.identify(recipes.build(self.stock, ["cpu_rest", "ring_5", "ble_interval", "battery_table"], **self.k), **self.k)), "1.0's Processor rest, without the log")
+        self.assertFalse(update_available(recipes.identify(recipes.whole(self.stock), **self.k)), "the original firmware has nothing to update")
 
 
 class FromEarlierVersionsTest(unittest.TestCase):

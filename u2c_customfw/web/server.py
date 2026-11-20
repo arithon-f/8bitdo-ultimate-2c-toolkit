@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from .. import __version__, disclaimer, settings, state, update
 from .. import cli
 from ..firmware import recipes
-from ..ops import backup as bkp, battlog, dongle, probe, report as report_mod, shown
+from ..ops import backup as bkp, battlog, dongle, probe, report as report_mod, shown, update_available
 from ..ops import settings as settings_ops
 from ..ops.plan import OpError
 from ..protocol import ProtocolError, app
@@ -295,7 +295,7 @@ def make_server(store: Path, port: int = 0):
             keys = shown(st.recipes)
             ring = [recipes.RECIPES[k].title for k in keys if recipes.RECIPES[k].group == "ring"]
             self.send(200, json.dumps({"known": st.known, "recipes": keys, "version": version, "version_from": fw.version_from,
-                                       "pending": fw.pending, "boot_identity": fw.boot_identity, "outdated": st.outdated, "ring_level": fw.ring_level,
+                                       "pending": fw.pending, "boot_identity": fw.boot_identity, "outdated": st.outdated, "update": update_available(st), "ring_level": fw.ring_level,
                                        "restore_backup": pick and {"name": pick.path.name, "taken": bkp.taken(pick.path), "firmware": bkp.describe(pick.state)},
                                        "unit_backups": sorted(b.path.name for b in here),
                                        "titles": [recipes.RECIPES[k].title for k in keys],

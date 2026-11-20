@@ -104,7 +104,7 @@ class CliTest(unittest.TestCase):
         dev = SimBoot(self.flash)
         code, text = run(["patch", "--tweaks", "cable_360", "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)
         self.assertEqual(code, 0, text)
-        self.assertEqual(recipes.identify(bytes(dev.f[0x6000:0x18400]), **K).recipes, ("ble_interval", "cable_360"))   # every install asks for 12.5 ms
+        self.assertEqual(recipes.identify(bytes(dev.f[0x6000:0x18400]), **K).recipes, ("battery_table", "ble_interval", "cable_360"))   # every install asks for 12.5 ms and has the battery table
         self.assertIn(("restart",), dev.ops)
         self.assertTrue(text.rstrip().endswith("Installed. The controller hasn't come back yet: if macOS asks whether to allow the accessory to connect, allow it. "
                                                "Otherwise unplug the controller, hold Home for about 12 seconds until it turns off, then connect it again. If you changed a Bluetooth tweak, remove the controller in System Settings → Bluetooth and pair it again."), text)
@@ -153,7 +153,7 @@ class CliTest(unittest.TestCase):
 
     def test_installing_what_is_there_writes_nothing_and_says_so(self):
         state.accept(self.tmp)
-        built = recipes.build(STOCK_A, ["cable_360", "ble_interval"], **K)
+        built = recipes.build(STOCK_A, ["cable_360", "ble_interval", "battery_table"], **K)
         f = bytearray(self.flash); f[image.BASE:image.APP_END] = built
         dev = SimBoot(bytes(f))
         code, text = run(["patch", "--tweaks", "cable_360", "--write", "--store", str(self.tmp)], [found("boot", 0x3208, 0x8C)], dev)

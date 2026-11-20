@@ -77,7 +77,7 @@ class ByCableTest(Base):
         self.unit = Controller(self.flash)
         code, text = go(["patch", "--tweaks", "cable_360", "--write"], self.unit, self.tmp)
         self.assertEqual(code, 0, text)
-        self.assertEqual(self.tweaked(), ("ble_interval", "cable_360"))
+        self.assertEqual(self.tweaked(), ("battery_table", "ble_interval", "cable_360"))
         self.assertEqual(self.unit.sent.count(ENTER), 1)
         self.assertEqual(self.unit.boot_cmds.count(7), 1)
         self.assertEqual(self.unit.mode, "cable_360")
@@ -113,7 +113,7 @@ class ByCableTest(Base):
 
     def test_nothing_to_change_leaves_it_running(self):
         built = bytearray(self.flash)
-        built[image.BASE:image.APP_END] = recipes.build(STOCK_A, ["cable_360", "ble_interval"], **K)
+        built[image.BASE:image.APP_END] = recipes.build(STOCK_A, ["cable_360", "ble_interval", "battery_table"], **K)
         self.unit = Controller(bytes(built))
         code, text = go(["patch", "--tweaks", "cable_360", "--write"], self.unit, self.tmp)
         self.assertEqual(code, 0, text)
@@ -211,7 +211,7 @@ class ByCableTest(Base):
         with mock.patch.object(Controller, "open", restart_fails):
             code, text = go(["patch", "--tweaks", "cable_360", "--write"], self.unit, self.tmp)
         self.assertEqual(code, 0, text)
-        self.assertEqual(self.tweaked(), ("ble_interval", "cable_360"))
+        self.assertEqual(self.tweaked(), ("battery_table", "ble_interval", "cable_360"))
         self.assertIn("Installed. The controller hasn't come back yet", text)
 
 

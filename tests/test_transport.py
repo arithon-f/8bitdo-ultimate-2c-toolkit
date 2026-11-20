@@ -39,6 +39,11 @@ class TransportTest(unittest.TestCase):
             self.assertIsInstance(d.vendor, int)
 
     @unittest.skipUnless(sys.platform == "darwin", "IOKit only on macOS")
+    def test_the_hid_plug_in_stays_loaded_while_managers_come_and_go(self):
+        from u2c_customfw.transport import iokit
+        self.assertTrue(iokit._HIDLIB)   # without it, releasing a listing's devices can unload IOHIDLib under the controller's
+
+    @unittest.skipUnless(sys.platform == "darwin", "IOKit only on macOS")
     def test_only_8bitdo_and_microsoft_devices_are_listed(self):
         from u2c_customfw.transport import iokit
         self.assertTrue(all(d.vendor in iokit.VENDORS for d in transport.list_devices()))
