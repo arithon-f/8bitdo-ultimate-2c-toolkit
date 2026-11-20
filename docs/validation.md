@@ -261,3 +261,24 @@ full backup of each.
 
 Not tried on hardware: Restore → Original taking 1.09 from a backup, and the message for a dongle with its original
 firmware and the controller on.
+
+# Hardware validation of 1.2 (2026-11-20)
+
+On the same Ultimate 2C, by cable on macOS 27.2 (Apple silicon), after a full backup. Steps 1 and 2 ran from source, the
+rest through the core of the built 1.2.0 beta 1 app, with the requests its page sends.
+
+1. **Install by cable** over 1.1's firmware with the same tweaks (160 bytes: the battery level table, the battery log
+   without the flash unlock, and the alerts' thresholds): read back as installed, with no update notice; before it, the
+   1.1 firmware showed the notice.
+2. **Battery log with the flash left locked:** on battery over Bluetooth, one record a minute (15 records), with the
+   table's percentages: 3870 mV read 78 %, 3848 mV 76 %.
+3. **The device shown:** an install sent for the dongle with the controller connected was refused, and nothing was written.
+4. **Names:** a chosen Bluetooth name and cable name were installed (34 bytes), and macOS showed the cable name at once;
+   reinstalling without names kept both and wrote nothing; empty names put 8BitDo's back.
+5. **Restore → Original** took 1.09 from a backup (no download) and wrote 5,306 bytes; reinstalling the tweaks wrote them
+   back and kept the saved Home ring level.
+6. **The core stays up** across four restarts of the controller after writes. Before the IOHIDLib fix, the command line's
+   core crashed once as the controller restarted after a write.
+
+Not tried on hardware: a chosen Bluetooth name as macOS shows it (it needs pairing again), the dongle's names, Linux,
+Diagnostics with two Xbox controllers over Bluetooth, and a whole discharge with the new table and its alerts.

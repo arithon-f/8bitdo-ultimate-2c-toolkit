@@ -232,7 +232,7 @@ class DongleWriteTest(unittest.TestCase):
             self.assertIn("staged", str(e.exception))
             self.assertEqual(bytes(w.flash), bytes(record))
             self.assertEqual(w.mode, start)   # idle: it never entered update mode
-        record[dongle.RECORD + 0x20:dongle.RECORD + 0x24] = bytes(4)   # length 0, as on Carlos's dongle: nothing staged
+        record[dongle.RECORD + 0x20:dongle.RECORD + 0x24] = bytes(4)   # length 0, as on a tested dongle: nothing staged
         self.assertFalse(dongle.staged(bytes(record[dongle.RECORD:dongle.RECORD + 0x24])))
 
     def test_the_write_never_leaves_bank_a(self):
