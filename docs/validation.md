@@ -289,3 +289,16 @@ rest through the core of the built 1.2.0 beta 1 app, with the requests its page 
 
 Not tried on hardware: the dongle's names, Linux,
 Diagnostics with two Xbox controllers over Bluetooth, and a whole discharge with the new table and its alerts.
+
+# Hardware validation of 1.1.1 (2026-11-20)
+
+On the same Ultimate 2C, by cable on macOS 27.2 (Apple silicon), through the core of the built 1.1.1 app, with the requests
+its page sends. The controller had firmware from a later development build, which 1.1.1 reads as unknown.
+
+1. **Restore → Original** took 1.09 from a backup and wrote 5,329 bytes; **installing the tweaks** wrote 5,222 bytes, with
+   the battery log that no longer turns the flash's protection off and the plain Bluetooth icon; a second check said it
+   already had this firmware. The core stayed up across both restarts of the controller.
+2. **The update notice:** that firmware shows none; firmware installed with 1.1.0 shows it.
+3. Checked on the same controller with the later build, whose code for these is the same: the battery log still writes
+   with the flash protected, an install sent for the dongle with the controller connected is refused, and after pairing
+   again with the plain icon the battery widget no longer shows a keyboard.
