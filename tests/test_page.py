@@ -262,6 +262,11 @@ class TabsTest(PageCase):
         css = (Path(__file__).parent.parent / "u2c_customfw/web/static/style.css").read_text()
         self.assertIn(".upd{color:var(--info)", css)
 
+    def test_by_cable_the_battery_comes_from_the_controller(self):
+        self.assertEqual(self.server.dom("&diagsim=cable&cablebattery=1").find("test-battery").all_text(), "84 %, charging (read from the controller)")
+        self.assertEqual(self.server.dom("&diagsim=cable&cablebattery=full").find("test-battery").all_text(), "Charged (read from the controller)")
+        self.assertEqual(self.server.dom("&diagsim=bt").find("test-battery").all_text(), "macOS doesn't report the battery for this controller")
+
     def test_the_hero_says_where_the_version_came_from(self):
         self.assertEqual(self.hero("")[2], "Identified from the installed firmware")
 

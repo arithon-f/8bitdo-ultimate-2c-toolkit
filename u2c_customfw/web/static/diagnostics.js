@@ -95,9 +95,12 @@ const TEST_MESSAGES = {
   background: `The controller test is paused, because ${SYSTEM} only sends controller input to the app in front.`,
 };
 
+let cableAsked = false;   // the first reading once a controller by cable is known; then every 15 s
+
 function diagnosticsRender() {
   const body = $("test-body");
   if (!body || !testVisible) return;
+  if (byCable() !== cableAsked) { cableAsked = byCable(); if (cableAsked) readCableBattery(); else cableBattery = null; }
   const mode = testMode();
   const key = mode === "live" ? `live:${testState.name}:${testState.category}:${testState.localities.join()}:${directLine()}` : mode;
   if (key === testMounted) return;
@@ -122,9 +125,28 @@ function batteryText(b) {  // macOS defaults to level 0 and an unknown state whe
   return `${Math.round(b.level * 100)} %${b.state === "charging" ? ", charging" : ""}`;
 }
 
+let cableBattery = null;   // the controller's own reading by cable (GET /api/battery), where macOS reports none
+
+const byCable = () => !!st && st.devices.some((d) => d.mode === "cable" || d.mode === "cable_360");
+
+async function readCableBattery() {
+  if (!testVisible || busy || !byCable()) return;
+  try {
+    const got = await api("GET", "/api/battery");
+    if (!got.busy) cableBattery = got.source === "cable" ? got : null;
+  } catch (e) { return; }
+  paintBattery();
+}
+setInterval(readCableBattery, 15000);
+
 function paintBattery() {
   const row = $("test-battery");
-  if (row && testState) row.textContent = batteryText(testState.battery);
+  if (!row || !testState) return;
+  const own = testState.battery, c = cableBattery;
+  const none = !own || own.level < 0 || (own.state === "unknown" && own.level === 0);
+  row.textContent = none && c && byCable()
+    ? (c.unavailable ? "Install the tweaks again to read it by cable" : c.full ? "Charged (read from the controller)" : `${c.percent} %${c.charging ? ", charging" : ""} (read from the controller)`)
+    : batteryText(own);
 }
 
 function vibrationText(localities) {
