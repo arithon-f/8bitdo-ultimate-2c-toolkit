@@ -1,10 +1,10 @@
 # U2C Firmware Toolkit
 
 <p align="center">
-  <a href="https://github.com/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/releases/latest"><img src="https://img.shields.io/github/v/release/carlosbrownef-source/8bitdo-ultimate-2c-toolkit" alt="Latest release"></a>
-  <a href="https://github.com/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/releases"><img src="https://img.shields.io/github/downloads/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/total" alt="Downloads"></a>
+  <a href="https://github.com/arithon-f/8bitdo-ultimate-2c-toolkit/releases/latest"><img src="https://img.shields.io/github/v/release/arithon-f/8bitdo-ultimate-2c-toolkit" alt="Latest release"></a>
+  <a href="https://github.com/arithon-f/8bitdo-ultimate-2c-toolkit/releases"><img src="https://img.shields.io/github/downloads/arithon-f/8bitdo-ultimate-2c-toolkit/total" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/platform-macOS%2013%2B-blue" alt="macOS 13 or later">
-  <img src="https://img.shields.io/github/license/carlosbrownef-source/8bitdo-ultimate-2c-toolkit" alt="GPL-3.0 license">
+  <img src="https://img.shields.io/github/license/arithon-f/8bitdo-ultimate-2c-toolkit" alt="GPL-3.0 license">
 </p>
 
 <p align="center">
@@ -39,18 +39,18 @@ It works with the **Ultimate 2C Wireless on firmware 1.09** and its **2.4 GHz do
 
 ## Install (macOS 13 or later)
 
-1. Download the zip for your Mac from the [releases page](https://github.com/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/releases/latest) and unzip it: `firmware-toolkit-<version>-macos-arm64.zip` for Apple silicon, or `firmware-toolkit-<version>-macos-x86_64.zip` for Intel. The Intel build has been tested under Rosetta, not yet on an Intel Mac.
+1. Download the zip for your Mac from the [releases page](https://github.com/arithon-f/8bitdo-ultimate-2c-toolkit/releases/latest) and unzip it: `firmware-toolkit-<version>-macos-arm64.zip` for Apple silicon, or `firmware-toolkit-<version>-macos-x86_64.zip` for Intel. The Intel build has been tested under Rosetta, not yet on an Intel Mac.
 2. Open the app once. macOS will block it because it is not signed: open **System Settings → Privacy & Security**, scroll to the message about the app and click **Open Anyway** (right-click → Open no longer works on current macOS). You can also remove it from quarantine with `xattr`, as the [FAQ](docs/faq.md#macos-wont-open-the-app) shows.
 3. When asked, allow **Input Monitoring** (System Settings → Privacy & Security → Input Monitoring). The app needs it to talk to the controller and the dongle.
 
-Or with [Homebrew](https://github.com/carlosbrownef-source/homebrew-tap), which replaces step 1:
+Or with [Homebrew](https://github.com/arithon-f/homebrew-tap), which replaces step 1:
 
 ```sh
 # the app
-brew trust --cask carlosbrownef-source/tap/firmware-toolkit
-brew install --cask carlosbrownef-source/tap/firmware-toolkit
+brew trust --cask arithon-f/tap/firmware-toolkit
+brew install --cask arithon-f/tap/firmware-toolkit
 # the command line only
-brew install carlosbrownef-source/tap/firmware-toolkit
+brew install arithon-f/tap/firmware-toolkit
 ```
 
 Or from source, with Python 3.12+: `python3 -m u2c_customfw.web` prints a local address to open in a browser; `python3 -m u2c_customfw --help` is the command line. The command-line tool and the Python package keep the project's first name, `u2c-customfw`.

@@ -115,6 +115,14 @@ class CliTest(unittest.TestCase):
         self.assertRegex(text, r"Backup saved as “controller-\d{8}-\d{6}\.bin”\. The controller has the original firmware 1\.09\.")
         self.assertIn("sha256 ", text)   # for the command line only
 
+    def test_store_is_created_private(self):   # backups hold the pairings and calibration
+        for make in (state.accept, state.lock_device):
+            store = self.tmp / make.__name__
+            f = make(store)
+            if f:
+                f.close()
+            self.assertEqual(store.stat().st_mode & 0o777, 0o700)
+
     def test_installing_what_is_there_writes_nothing_and_says_so(self):
         state.accept(self.tmp)
         built = recipes.build(STOCK_A, ["cable_360", "ble_interval"], **K)
@@ -174,6 +182,17 @@ class CliTest(unittest.TestCase):
             with self.assertRaises(cli.Exit) as e:
                 cli.cmd_restore(args, self.tmp)
         self.assertIn("isn't the one shown", e.exception.msg)
+
+    def test_a_write_refuses_another_device_than_the_one_shown(self):
+        for cmd, extra in ((cli.cmd_patch, dict(tweaks="cable_360")), (cli.cmd_restore, dict(source="stock"))):
+            args = SimpleNamespace(**{**dict(write=True, accept_disclaimer=True, tweaks="", backup=None, download=False, source="backup", expect=None,
+                                             force_unknown=False, device="dongle", say=lambda t: None, hint=lambda t: None, progress=None), **extra})
+            dev = SimBoot(self.flash)
+            with mock.patch.object(cli, "find", lambda: [found("boot", 0x3208, 0x8C)]), mock.patch.object(cli, "open_channel", lambda i, rid: dev):
+                with self.assertRaises(cli.Exit) as e:
+                    cmd(args, self.tmp)
+            self.assertIn("The dongle the window showed isn't connected anymore, so nothing was written.", e.exception.msg)
+            self.assertEqual([o for o in dev.ops if o[0] in ("erase", "write")], [])
 
     def test_restore_takes_no_file_or_download_argument(self):
         for extra in (["controller-20260101-000000.bin"], ["--download"]):

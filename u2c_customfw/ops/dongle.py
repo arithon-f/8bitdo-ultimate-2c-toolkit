@@ -107,7 +107,7 @@ def backup(ch, store: Path, progress) -> Path:
     b = _read(ch, 0, FLASH, lambda d, t: progress("pass 2", d, t))
     if a != b:
         raise OpError("The two reads of the dongle's memory differ, so nothing was saved. Try again in another USB port.")
-    store.mkdir(parents=True, exist_ok=True)
+    store.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = store / f"dongle-{datetime.datetime.now():%Y%m%d-%H%M%S}.bin"
     path.write_bytes(a)
     sha = hashlib.sha256(a).hexdigest()

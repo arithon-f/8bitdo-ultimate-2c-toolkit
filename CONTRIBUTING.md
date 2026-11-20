@@ -25,6 +25,10 @@ that decide what can be merged and how.
 - A change must never write the bootloader (`0x0`-`0x5FFF`), erase the whole chip, or write the areas specific to one
   unit. Every edit checks the original bytes it replaces. A PR that relaxes a check in [SAFEGUARDS.md](SAFEGUARDS.md)
   won't be merged.
+- When a tweak changes, the people who have it are told. A changed blob keeps its published bytes as an accepted form
+  of the edit (`accepts` in `recipes.py`), so the firmware is still recognised, and the app then says that installing
+  the tweaks again updates them. A new hidden tweak that comes with every install does the same for firmware without it.
+  `tests/test_firmware.py` checks both, and the release notes say what changed.
 
 ## Private data and 8BitDo's firmware
 

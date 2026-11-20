@@ -15,7 +15,7 @@ def get_logger(store: Path | None = None) -> logging.Logger:
             for h in files:
                 log.removeHandler(h)
                 h.close()
-            Path(store).mkdir(parents=True, exist_ok=True)
+            Path(store).mkdir(mode=0o700, parents=True, exist_ok=True)
             h = logging.FileHandler(path)
             h.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
             log.addHandler(h)

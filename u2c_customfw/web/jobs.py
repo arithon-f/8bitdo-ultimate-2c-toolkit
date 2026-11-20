@@ -67,7 +67,7 @@ class Runner:
             if self.writing:
                 self.awake = keep_awake()
             args = SimpleNamespace(**{**dict(write=False, tweaks="", backup=None, download=False, source="backup", expect=None,
-                                             accept_disclaimer=False, force_unknown=False), **params})
+                                             accept_disclaimer=False, force_unknown=False, device=None), **params})
             log = get_logger(self.store)
             log.info("job %s %s", name, params)   # the page never sends a path
 

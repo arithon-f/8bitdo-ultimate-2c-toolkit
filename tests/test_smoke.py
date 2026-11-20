@@ -7,7 +7,7 @@ from pathlib import Path
 class SmokeTest(unittest.TestCase):
     def test_version(self):
         import u2c_customfw
-        self.assertEqual(u2c_customfw.__version__, "1.1.0")
+        self.assertEqual(u2c_customfw.__version__, "1.1.1")
 
 
 ROOT = Path(__file__).parent.parent
@@ -35,7 +35,7 @@ class NameTest(unittest.TestCase):
         self.assertIn("Formula/firmware-toolkit.rb", workflow)
         self.assertIn("Casks/firmware-toolkit.rb", workflow)
         readme = (ROOT / "README.md").read_text()
-        self.assertIn("carlosbrownef-source/tap/firmware-toolkit", readme)
+        self.assertIn("arithon-f/tap/firmware-toolkit", readme)
         self.assertNotIn("tap/u2c-customfw", readme)
 
     def test_the_identifiers_macos_and_the_backups_depend_on_stay(self):

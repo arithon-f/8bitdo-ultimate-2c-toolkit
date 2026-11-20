@@ -11,7 +11,7 @@ def answer(tag):
 class UpdateTest(unittest.TestCase):
     def test_a_newer_release_is_offered_with_a_link_built_here(self):
         self.assertEqual(update.newer("1.0.1", answer("v1.0.2")),
-                         {"version": "1.0.2", "url": "https://github.com/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/releases/tag/v1.0.2"})
+                         {"version": "1.0.2", "url": "https://github.com/arithon-f/8bitdo-ultimate-2c-toolkit/releases/tag/v1.0.2"})
 
     def test_the_same_or_an_older_release_is_not(self):
         for current, tag in (("1.0.2", "v1.0.2"), ("1.0.2", "v1.0.1"), ("1.0.2b1", "v1.0.1"), ("1.0.10", "v1.0.9")):

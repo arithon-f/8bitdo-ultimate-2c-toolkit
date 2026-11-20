@@ -2,7 +2,7 @@
 """Restore: put back this unit's backup, or 8BitDo's stock v1.09 bank A."""
 from .. import protocol
 from ..firmware import image, recipes
-from . import probe
+from . import battlog, probe
 from .backup import describe, taken
 from .patch import check_no_pending_update, check_unit, current_bank_a
 from .probe import detect_version
@@ -41,6 +41,8 @@ def plan_restore(ch, backup, source: str, stock, force_unknown: bool = False, mo
             raise OpError(f"{e}. Nothing was written.") from e
         for a in range(image.BANK_A_ERASE_END, image.CONFIG_START, image.SECTOR):
             o = a - image.BANK_A_ERASE_END
+            if battlog.START <= a < battlog.END:   # the firmware's own log, newer than any backup: not put back
+                continue
             if now[o:o + image.SECTOR] != bytes(target[a:a + image.SECTOR]):
                 others.append(a)
     diff = sum(x != y for x, y in zip(cur, want))

@@ -40,7 +40,7 @@ def backup(ch, mode: str, store: Path, progress) -> Backup:
     if a != b:
         n = sum(a[i:i + boot.CHUNK] != b[i:i + boot.CHUNK] for i in range(0, len(a), boot.CHUNK))
         raise OpError(f"The two reads of the controller's memory differ in {n} place(s), so nothing was saved. Try again with another cable.")
-    store.mkdir(parents=True, exist_ok=True)
+    store.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = store / f"controller-{datetime.datetime.now():%Y%m%d-%H%M%S}.bin"
     n = 1
     while path.exists():

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from u2c_customfw.firmware import image, recipes
 from u2c_customfw.firmware.recipes import RecipeError
+from u2c_customfw.ops import update_available, with_hidden
 
 KEYS = ["bt_xbox", "bt_rumble", "cable_360", "dim_leds"]
 VALID = [list(c) for n in range(5) for c in itertools.combinations(KEYS, n) if "bt_rumble" not in c or "bt_xbox" in c]
@@ -117,6 +118,7 @@ class ControllerNameTest(unittest.TestCase):
         "ringhook02.bin": "36bb496143d7a87026b50fe0220ef246c168c3b6b6251f4286b33edf1498222d",
         "rumble03.bin": "f4be669cb33f916fa8e494c6b7d77bd2c29d165fff7fee62ccf9b7952c6e092d",
         "ringhook03.bin": "c5c17678cb98c19b506922d7b7a33a82dfe50a9e144183eab2ed7d6ff4facd0d",
+        "battlog11.bin": "a928125ce55ea206b7c432f4c77b83f92ebfa2d532d8f5c1e2830d7d2e692244",   # 1.1: the battery log
         "wdog.bin": "ee8ef69d98f097cc6567ff6f16a29b5cf7fceedb6055bbf87db778fcdd2590a8",      # 1.0: Processor rest
         "stall.bin": "f4c60c286a6141864bc56fee16cd98f8d00e8e8845ba11269901874301bebe36",
         "hstall.bin": "6dd074c9b178b74f2391e6f72f0c86bb3e04258456ab86d89a03b96e8872f0e3",
@@ -180,6 +182,41 @@ class PastThePayloadTest(unittest.TestCase):
     def test_the_ring_code_is_past_the_payload(self):
         img = recipes.build(self.stock, ["ring_5"], **self.k)
         self.assertNotEqual(img[0x18400 - image.BASE:0x18404 - image.BASE], b"\xff" * 4)
+
+
+class UpdateNoticeTest(unittest.TestCase):
+    """The rule: when a tweak changes, the person is told. A changed blob keeps its old bytes as an accepted form (see
+    test_the_published_tweaks_keep_their_bytes), and every accepted form must make the app say an update exists."""
+    ALL = ["bt_xbox", "bt_rumble", "cable_360", "dim_leds", "battery_alerts", "settings", "fixes", "stick_precision", "cpu_rest", "ring_5"]
+
+    def setUp(self):
+        self.stock, self.k = synthetic()
+
+    def test_every_earlier_form_of_a_tweak_says_an_update_exists(self):
+        keys = with_hidden(self.ALL)
+        fresh = recipes.build(self.stock, keys, **self.k)
+        st = recipes.identify(fresh, **self.k)
+        self.assertEqual((st.known, st.older, update_available(st)), (True, False, False))
+        checked = 0
+        for k in keys:
+            for e in recipes.RECIPES[k].edits:
+                if e.superseded_by in keys:
+                    continue
+                for old in e.accepts:
+                    img = bytearray(fresh); img[e.addr - image.BASE:e.addr - image.BASE + e.size] = old
+                    st = recipes.identify(bytes(img), **self.k)
+                    self.assertEqual((st.known, st.recipes), (True, tuple(sorted(keys))), (k, hex(e.addr)))
+                    self.assertTrue(st.older and update_available(st), (k, hex(e.addr)))
+                    checked += 1
+        self.assertGreaterEqual(checked, 3)   # rumble 0.2 and 0.3, 1.1's battery log
+
+    def test_a_missing_hidden_tweak_says_an_update_exists(self):
+        old = recipes.build(self.stock, [k for k in with_hidden(self.ALL) if k != "bt_plain_icon"], **self.k)   # what 1.1.0 installed
+        st = recipes.identify(old, **self.k)
+        self.assertTrue(st.known and not st.older and update_available(st))
+        self.assertFalse(update_available(recipes.identify(recipes.whole(self.stock), **self.k)), "the original firmware has nothing to update")
+        with self.assertRaises(RecipeError):
+            recipes.build(self.stock, ["bt_plain_icon"], **self.k)   # only with the Xbox identity over Bluetooth
 
 
 class FromEarlierVersionsTest(unittest.TestCase):
@@ -310,6 +347,9 @@ class FromEarlierVersionsTest(unittest.TestCase):
         self.assertEqual(at(0x6020, len(recipes._blob("wdog.bin"))), recipes._blob("wdog.bin"))   # Processor rest's own code as before
         st = recipes.identify(img, **self.k)
         self.assertEqual((st.known, st.recipes), (True, tuple(sorted(self.FOUR + ["cpu_rest", "battery_log"]))))
+        with_11 = bytearray(img)   # 1.1's log, which unlocked the flash, still counts as installed
+        with_11[0x9964 - image.BASE:0x9CAC - image.BASE] = recipes._blob("battlog11.bin").ljust(0x9CAC - 0x9964, b"\0")
+        self.assertEqual(recipes.identify(bytes(with_11), **self.k).recipes, st.recipes)
         old = recipes.build(self.stock, self.FOUR + ["cpu_rest"], **self.k)   # what 1.0 installed
         self.assertEqual(recipes.identify(old, **self.k).recipes, tuple(sorted(self.FOUR + ["cpu_rest"])))
         ring_only = recipes.build(self.stock, KEYS + ["ring_5"], **self.k)    # the call as the ring alone has it

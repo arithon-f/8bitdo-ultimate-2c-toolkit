@@ -22,7 +22,7 @@
       const answer = await (await realFetch(url, options)).json();
       return json({ ...answer, available: true, note: "", values: Object.fromEntries(answer.fields.map((f) => [f.name, f.default])), dead_zone_off: false, mapping: { r4: 0, l4: query.get("mapped") ? 1 << 14 : 0 } });
     }
-    if (path.startsWith("/api/update") && query.get("update")) return json({ version: "9.9.9", url: "https://github.com/carlosbrownef-source/8bitdo-ultimate-2c-toolkit/releases/tag/v9.9.9" });
+    if (path.startsWith("/api/update") && query.get("update")) return json({ version: "9.9.9", url: "https://github.com/arithon-f/8bitdo-ultimate-2c-toolkit/releases/tag/v9.9.9" });
     if (path.startsWith("/api/ring")) return query.get("ringfail") ? new Response(JSON.stringify({ error: "The controller said no." }), { status: 409 }) : json({ ok: true });
     if (path.startsWith("/api/firmware") && device === "bluetooth_xbox") return json({ note: "Connect the controller by cable to see or change its firmware. Over Bluetooth, you can test it in Diagnostics and change the Home ring in Settings." });
     if (path.startsWith("/api/firmware") && String(device).startsWith("dongle")) return json({ device: "dongle", paired: device === "dongle_paired", boot: false, backed: !query.has("nodonglebackup"), stock_ok: true,
@@ -34,7 +34,7 @@
       if (!got.tweaks) return json(got);
       const recipes = all ? ["bt_xbox", "bt_rumble", "cable_360", "dim_leds", "battery_alerts", "settings", "fixes", "cpu_rest", "ring_5"] : ["bt_xbox", "ring_5", ...(query.get("settings") ? ["settings"] : [])];
       const tweaks = got.tweaks.map((t) => t.key === "ring" ? { ...t, title: "Home ring: 5 %", on: true } : { ...t, on: recipes.includes(t.key) });
-      return json({ ...got, recipes, titles: all ? tweaks.filter((t) => t.on).map((t) => t.title) : ["Dimmer LEDs", "Home ring: 5 %"], tweaks, ring_level: 2, outdated: !!query.get("outdated") });
+      return json({ ...got, recipes, titles: all ? tweaks.filter((t) => t.on).map((t) => t.title) : ["Dimmer LEDs", "Home ring: 5 %"], tweaks, ring_level: 2, outdated: !!query.get("outdated"), update: !!query.get("older") });
     }
     if (path.startsWith("/api/firmware") && query.get("identity") === "none") return json({ ...(await answer.json()), boot_identity: null });
     if (path.startsWith("/api/firmware") && query.get("nobackup")) {   // none of this controller's backups either

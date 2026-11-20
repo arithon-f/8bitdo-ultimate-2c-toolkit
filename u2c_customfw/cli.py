@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import fetch, state
 from .firmware import image, recipes
-from .ops import backup as bkp, devices, dongle as dng, patch, probe, report, restore, shown
+from .ops import backup as bkp, devices, dongle as dng, patch, probe, report, restore, shown, update_available, with_hidden
 from .ops.log import get_logger
 from .ops.plan import OpError
 from . import protocol
@@ -26,6 +26,7 @@ NOT_ENTERED = "The controller didn't restart into update mode, so nothing was wr
 IN_UPDATE_MODE = "The controller is in update mode and nothing was written. Try again: the app installs and restores from there too."
 BOOT_WAIT, BACK_WAIT, STEP = 8, 10, 0.3   # seconds: to reach update mode, to come back from it, between looks
 UNCHANGED = "The controller already has this firmware, so nothing was written."
+UPDATE = "This app has newer versions of some of the tweaks on this controller. Install the tweaks again to update them; the same tweaks stay chosen."
 CHECKED = "The check passed and nothing was written."
 DONGLE_DONE = "Done. The dongle restarted with its new firmware. Turn the controller on to use it."
 DONGLE_REPLUG = "Done. Unplug the dongle and plug it back in, then turn the controller on to use it."
@@ -104,6 +105,13 @@ def _dongle_in_boot(f) -> bool:
         return boot.identify(ch) == boot.DONGLE_ID
     finally:
         ch.close()
+
+
+def _check_shown(args, dongle: bool) -> None:
+    """The page says which device it asked about; another one connected since then gets nothing."""
+    shown = getattr(args, "device", None)
+    if shown and (shown == "dongle") != dongle:
+        raise Exit(2, f"The {'controller' if dongle else 'dongle'} the window showed isn't connected anymore, so nothing was written. Check again.")
 
 
 def _dongle_change(args, store, f, tweaks=(), source: str | None = None):
@@ -187,6 +195,8 @@ def cmd_identify(args, store):
     bank_a = data[image.BASE:image.APP_END] if len(data) == image.FLASH_SIZE else data
     s = recipes.identify(bank_a)
     args.say(("original 1.09" + (f" with tweaks: {', '.join(shown(s.recipes))}" if shown(s.recipes) else "")) if s.known else "unknown firmware")
+    if update_available(s):
+        args.say(UPDATE)
 
 
 def unit_backups(ch, store, mode="boot", whole=True):
@@ -307,12 +317,13 @@ def cmd_patch(args, store):
     need_accept(args, store)
     f = pick(("boot", "cable", "cable_360", "dongle", "dongle_paired"))
     keys = [k for k in args.tweaks.split(",") if k]
-    if f.mode.startswith("dongle") or _dongle_in_boot(f):
+    dongle = f.mode.startswith("dongle") or _dongle_in_boot(f)
+    _check_shown(args, dongle)
+    if dongle:
         if any(k not in dng.TWEAKS for k in keys):
             raise Exit(2, f"The dongle's tweaks are {', '.join(dng.TWEAKS)}. Nothing was written.")
         return _dongle_change(args, store, f, keys)
-    keys += ["ble_interval"] if keys and "ble_interval" not in keys else []   # as the app: every install asks for 12.5 ms
-    keys += ["battery_log"] if "cpu_rest" in keys and "battery_log" not in keys else []   # and keeps the battery log
+    keys = with_hidden(keys)   # as the app: the 12.5 ms request in every install, the plain icon with the Xbox identity, the log with Processor rest
     stock = None
 
     def plan(ch, mode):
@@ -326,7 +337,9 @@ def cmd_patch(args, store):
 def cmd_restore(args, store):
     need_accept(args, store)
     f = pick(("boot", "cable", "cable_360", "dongle", "dongle_paired"))
-    if f.mode.startswith("dongle") or _dongle_in_boot(f):
+    dongle = f.mode.startswith("dongle") or _dongle_in_boot(f)
+    _check_shown(args, dongle)
+    if dongle:
         return _dongle_change(args, store, f, source=args.source)
     stock = None
     if args.source == "stock":   # a backup's checked copy of 1.09 first; else download, before update mode, so a failed
