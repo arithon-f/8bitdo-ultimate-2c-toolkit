@@ -56,6 +56,7 @@ Everything here is ours, in `firmware-src/packer.c`; none of it exists in stock.
 | `81 05 00 57 <0 R4, 1 L4> <u32 LE>` | Mapping, bits 0-15 of the word; 0 is none. In the scan's live table at once; in stock's four variables on a save, since stock keeps those by itself at power-off and restart |
 | `81 05 00 58 <0, 1>` | Stock's dead zone switch: `0x8433d6` at once, record `+6` on a save |
 | `81 05 00 5a` | Drop unsaved settings: read the record again on the next pass |
+| `81 05 00 5b` | Since 1.2, with the Home ring's code: the battery. Answers input report `02` with `5b`, the percentage, mV (u16 LE), the charged latch and external power (PD0), since `81 05 05` reads flash only. The vendor hooks call it first, then `vendor_a` or `vendor_b` as before |
 
 Hooks: `0x6a90`, `0x6abc` (run `0xa90`, `0xabc`) for the sticks, instead of `0x890`; `0xc910` for triggers and remapping, before `0xc3a8`, with its code in the dead RAM code at run address `0x1210` (image `0x7210`); `0xdce6`, `0xeaf4` and `rumble_tail` for the games' rumble; `0xa0f8`, `0xdaa8` for the buzz on connecting; `0xd1c8` for the idle limit. The tweak `fixes`: `0xa480`, `0xea88`, and the pointer at `0x178cc`.
 

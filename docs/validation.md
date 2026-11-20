@@ -288,6 +288,8 @@ rest through the core of the built 1.2.0 beta 1 app, with the requests its page 
    another UUID, installed with the names "8BitDo Ultimate 2C (X/S)" and "8BitDo Ultimate 2C (360)", 58 bytes): after
    pairing again, `pmset -g accps` gives the controller no accessory category, as for a real Xbox pad, instead of
    "Keyboard"; bluetoothd no longer logs "Detected keyboard LE HID", and the battery level still shows.
+9. **Battery by cable** (`81 05 00 5b`, 142 bytes with the rest): the controller answers on input report `02`, plugged in and
+   charged: 100 %, 4129 mV, charged, external power. The built app's menu bar item showed it while the app was open.
 
 Not tried on hardware: the dongle's names, Linux,
 Diagnostics with two Xbox controllers over Bluetooth, and a whole discharge with the new table and its alerts.

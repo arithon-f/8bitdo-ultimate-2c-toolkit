@@ -40,7 +40,7 @@ class SimApp:
             if self.battery is None:
                 return None
             pct, mv, full, ext = self.battery
-            return bytes([0x5B, pct, mv & 0xFF, mv >> 8, full, ext]).ljust(64, b"\0")
+            return bytes([0x02, 0x5B, pct, mv & 0xFF, mv >> 8, full, ext]).ljust(64, b"\0")   # as the controller sends it
         if cmd == 0x21:
             self.open = not self.unprot
             return bytes([0x02, 0x22]).ljust(64, b"\0")
