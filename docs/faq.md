@@ -36,6 +36,10 @@ If a write was interrupted, use Restore: it works in update mode. To leave updat
 
 macOS remembers how a Bluetooth device described itself. After installing or removing a Bluetooth tweak, remove the controller from Bluetooth settings and pair it again.
 
+### The dongle stays in X-input after B + Home
+
+Turning the controller on from off with B + Home isn't enough. With the controller on and its cable unplugged, hold B and Home until it turns off, then keep holding B and press Home to turn it on. The dongle then presents itself as a D-input gamepad (`2dc8:301c`). It needs the D-input tweak on the dongle. X and Home held turns the controller off, and it comes back in X-input.
+
 ### macOS shows the controller's old name over Bluetooth
 
 macOS keeps the name it last saw for each Bluetooth device and uses it when the device connects, then reads the current one. So after you choose a new name and pair the controller again, macOS may show the old name, or 8BitDo's, in the battery widget and to games until the controller connects once more. Turn it off and on again and the new name appears. The name is in the controller either way.
