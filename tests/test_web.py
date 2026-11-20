@@ -13,7 +13,7 @@ from unittest import mock
 
 from u2c_customfw import cli, state
 from u2c_customfw.firmware import image, recipes
-from u2c_customfw.ops import backup as bkp, devices, probe, report
+from u2c_customfw.ops import backup as bkp, battery as battery_ops, devices, probe, report
 from u2c_customfw import transport
 from u2c_customfw.protocol import app
 from u2c_customfw.sim import SimApp, SimBoot
@@ -46,6 +46,28 @@ class WebTest(unittest.TestCase):
         status, text = self.call("GET", "/api/events")
         self.assertEqual(status, 200)
         return [json.loads(l[6:]) for l in text.splitlines() if l.startswith("data: ")]
+
+    def test_the_battery_comes_from_the_controller_by_cable_and_from_macos_over_bluetooth(self):
+        cable = transport.DeviceInfo(0x045E, 0x028E, 0xFF7A, "USB", "x", None)
+        dev = SimApp(controller_flash())
+        with mock.patch.object(cli, "find", lambda: [devices.Found(cable, "cable_360")]), mock.patch.object(cli, "open_channel", lambda i, rid: dev):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]),
+                             {"source": "cable", "percent": 77, "mv": 3870, "full": False, "external": True, "charging": True})
+            held = state.lock_device(self.store)   # a task or the command line has the controller
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {"busy": True})
+            state.unlock_device(held)
+            dev.battery = None   # firmware without the command
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {"source": "cable", "unavailable": True})
+        paired = SimApp(b"\xff" * 0x20000)   # a dongle with the controller's ID: its 0x10000 reads blank
+        with mock.patch.object(cli, "find", lambda: [devices.Found(cable, "cable_360")]), mock.patch.object(cli, "open_channel", lambda i, rid: paired):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {})
+            self.assertFalse([s for s in paired.sent if s.startswith("8105005b")])
+        bt = transport.DeviceInfo(0x045E, 0x0B13, 0x0001, "Bluetooth Low Energy", "8BitDo Ultimate 2C (X/S)", None)
+        with mock.patch.object(cli, "find", lambda: [devices.Found(bt, "bluetooth_xbox")]), \
+                mock.patch.object(battery_ops, "bluetooth_percent", lambda name: 64 if name == "8BitDo Ultimate 2C (X/S)" else None):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {"source": "bluetooth", "percent": 64, "name": "8BitDo Ultimate 2C (X/S)"})
+        with mock.patch.object(cli, "find", lambda: [devices.Found(bt, "bluetooth_xbox"), devices.Found(bt, "bluetooth_xbox")]):
+            self.assertEqual(json.loads(self.call("GET", "/api/battery")[1]), {})   # two Xbox-ID pads: which one is unknown
 
     def test_the_battery_log_is_read_by_cable_and_saved_as_csv(self):
         import struct

@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from .. import __version__, disclaimer, settings, state, update
 from .. import cli
 from ..firmware import recipes
-from ..ops import backup as bkp, battlog, dongle, probe, report as report_mod, shown, update_available
+from ..ops import backup as bkp, battery as battery_ops, battlog, dongle, probe, report as report_mod, shown, update_available
 from ..ops import settings as settings_ops
 from ..ops.plan import OpError
 from ..protocol import ProtocolError, app
@@ -67,7 +67,7 @@ def make_server(store: Path, port: int = 0):
                 return self.send(403, "forbidden", "text/plain")
             path = self.path.split("?")[0]
             route = {"/api/state": self.api_state, "/api/events": self.api_events, "/api/firmware": self.api_firmware,
-                     "/api/settings": self.api_settings_read, "/api/linux-gamepad": self.api_linux_gamepad, "/api/busy": self.api_busy, "/api/update": self.api_update}.get(path)
+                     "/api/settings": self.api_settings_read, "/api/linux-gamepad": self.api_linux_gamepad, "/api/busy": self.api_busy, "/api/update": self.api_update, "/api/battery": self.api_battery}.get(path)
             if route:
                 return route()
             name = "index.html" if path == "/" else path.lstrip("/").removeprefix("static/")
@@ -122,6 +122,34 @@ def make_server(store: Path, port: int = 0):
             if sys.platform == "darwin" and not os.environ.get("U2C_SIM"):
                 subprocess.run(["/usr/bin/open", "-R", str(path)], check=False)
             return self.send(200, json.dumps({"records": len(rows), "summary": battlog.summary(rows), "name": path.name}))
+
+        def api_battery(self):
+            """The battery for the Diagnostics tab and the menu bar item: the controller's own reading by cable, or macOS's
+            over Bluetooth when exactly one Xbox-ID pad is connected. {} when there's nothing to read; {"busy": true} while a
+            task or another front end has the controller."""
+            found = cli.find()
+            cable = [f for f in found if f.mode in ("cable", "cable_360")]
+            if len(cable) == 1:
+                if not runner.claim():
+                    return self.send(200, json.dumps({"busy": True}))
+                answer = {}
+                try:
+                    ch = cli.open_channel(cable[0].info, 0x81)
+                    try:
+                        if app.open_session(ch) is not None:
+                            probe.check_not_dongle(ch)
+                            reading = app.battery(ch)
+                            answer = {"source": "cable", **reading} if reading else {"source": "cable", "unavailable": True}
+                    finally:
+                        ch.close()
+                except (OpError, PermissionDenied, OSError, ProtocolError):
+                    answer = {}
+                finally:
+                    runner.release()
+                return self.send(200, json.dumps(answer))
+            bluetooth = [f for f in found if f.mode == "bluetooth_xbox"]
+            percent = battery_ops.bluetooth_percent(bluetooth[0].info.name) if len(bluetooth) == 1 else None
+            return self.send(200, json.dumps({"source": "bluetooth", "percent": percent, "name": bluetooth[0].info.name} if percent is not None else {}))
 
         def api_busy(self):
             """For the Mac app's quit and close guard: the server knows, even when the page has lost track."""
