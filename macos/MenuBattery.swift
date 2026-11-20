@@ -70,24 +70,29 @@ final class MenuBattery: NSObject {
         let name = answer["name"] as? String ?? "The controller"
         line.title = full ? "\(name) \(how): charged" : "\(name) \(how): \(percent) %\(charging ? ", charging" : "")"
         let level = percent >= 88 ? 100 : percent >= 63 ? 75 : percent >= 38 ? 50 : percent >= 13 ? 25 : 0
-        draw(symbol: charging ? "battery.100percent.bolt" : "battery.\(level)percent", text: full ? "" : "\(percent) %")
+        draw(symbol: charging ? "battery.100percent.bolt" : "battery.\(level)percent", text: "\(percent)%")
     }
 
-    /// The symbol and the percentage as one template image, which macOS tints for the menu bar and dims on a screen
-    /// that isn't active.
+    /// The symbol with the percentage under it, as iStat Menus and MemoriaReloj stack theirs, as one template image, which
+    /// macOS tints for the menu bar and dims on a screen that isn't active. A fixed width, so the bar doesn't shift.
+    private static let font = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular)
+    private static let width = ceil(("100%" as NSString).size(withAttributes: [.font: font]).width) + 2
+
     private func draw(symbol: String, text: String) {
         guard let button = item?.button, drawn != symbol + text else { return }
         drawn = symbol + text
-        let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
+        let height = NSStatusBar.system.thickness
         let icon = NSImage(systemSymbolName: symbol, accessibilityDescription: "Controller battery")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .regular))
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: text.isEmpty ? 13 : 10, weight: .regular))
+        let attributes: [NSAttributedString.Key: Any] = [.font: Self.font, .foregroundColor: NSColor.black]
         let textSize = (text as NSString).size(withAttributes: attributes)
-        let iconSize = icon?.size ?? .zero, gap: CGFloat = text.isEmpty ? 0 : 4
-        let size = NSSize(width: ceil(iconSize.width + gap + textSize.width), height: ceil(max(iconSize.height, textSize.height)))
-        let image = NSImage(size: size, flipped: false) { _ in
-            icon?.draw(in: NSRect(x: 0, y: (size.height - iconSize.height) / 2, width: iconSize.width, height: iconSize.height))
-            (text as NSString).draw(at: NSPoint(x: iconSize.width + gap, y: (size.height - textSize.height) / 2), withAttributes: attributes)
+        let iconSize = icon?.size ?? .zero
+        let width = max(Self.width, ceil(iconSize.width))
+        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            let textY: CGFloat = text.isEmpty ? 0 : 1
+            let iconY = text.isEmpty ? (height - iconSize.height) / 2 : textY + textSize.height
+            icon?.draw(in: NSRect(x: (width - iconSize.width) / 2, y: iconY, width: iconSize.width, height: iconSize.height))
+            (text as NSString).draw(at: NSPoint(x: (width - textSize.width) / 2, y: textY), withAttributes: attributes)
             return true
         }
         image.isTemplate = true
