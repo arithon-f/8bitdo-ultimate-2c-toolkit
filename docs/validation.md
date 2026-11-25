@@ -330,3 +330,18 @@ the dongle plugged in. Before the fix the Diagnostics tab followed whichever pad
 real Xbox, and the Firmware tab read again and again (the core listed one of the two, in whatever order macOS gave them).
 After it: the tab stays on the 2C, rumble, Direct Report and the Home ring level reach the 2C only, and the Firmware tab
 reads once. A real Xbox controller is told apart by its manufacturer, which the 2C doesn't report.
+
+# Community report: a second controller on macOS 27.2.1 (2026-11-25)
+
+Run by a user on a second Ultimate 2C Wireless controller (not the maintainer's), firmware 1.09, macOS 27.2.1 (Apple
+silicon), with the macOS app 1.2.0 installed through Homebrew.
+
+- Backed up by cable, then Check First and Install Tweaks from "your backup": Xbox Series X|S over Bluetooth, Rumble over
+  Bluetooth, Dimmer LEDs, Battery alerts, Controller settings, Fixes, Processor rest and Faster Bluetooth input (5,338
+  bytes). Xbox 360 over cable was left off.
+- Bluetooth, after forgetting and pairing again: `045e:0b13`, version `0x0509`, over BLE, taken by Apple's
+  `AppleGameControllerPersonality` (`AppleGCHIDUserEventDriver`). GameController lists it as Xbox One, with the chosen
+  name.
+- Rumble was felt through GameController haptics (Core Haptics), through SDL 3.5.0 (`SDL_RumbleGamepad`, including an
+  infinite-duration request), and in Ryujinx Canary 1.3.354 (SDL3 backend) in Mario Kart 8 Deluxe.
+- No other driver was needed for the controller.
